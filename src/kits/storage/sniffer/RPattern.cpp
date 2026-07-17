@@ -15,6 +15,7 @@
 #include "RPattern.h"
 #include "Range.h"
 #include "Data.h"
+#include <cstddef>
 
 using namespace BPrivate::Storage::Sniffer;
 

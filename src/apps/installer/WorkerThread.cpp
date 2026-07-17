@@ -261,6 +261,10 @@ arch_efi_default_prefix()
 	return BString("BOOTRISCV32");
 #elif defined(__riscv) && __riscv_xlen == 64
 	return BString("BOOTRISCV64");
+#elif defined(__POWERPC__)
+	// PowerPC Macs boot via Open Firmware, not EFI; this prefix is unused
+	// on this architecture.
+	return BString();
 #else
 	#error "Error: Unknown EFI Architecture!"
 #endif

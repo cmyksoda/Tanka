@@ -5,7 +5,10 @@
  */
 
 
+#include <stdlib.h>
 #include <string.h>
+
+#include <OS.h>
 
 #include <boot/partitions.h>
 #include <boot/platform.h>
@@ -92,27 +95,21 @@ platform_add_boot_device(struct stage2_args *args, NodeList *devicesList)
 	} else
 		printf("could not open boot path.\n");
 
-/*	char name[256];
-	strcpy(name, sBootPath);
-	strcat(name, ":kernel_ppc");
-	int kernel = of_open(name);
-	if (kernel == OF_FAILED) {
-		puts("open kernel failed");
-	} else
-		puts("open kernel succeeded");
-*/
-	int handle = of_open(sBootPath);
-	if (handle == OF_FAILED) {
-		puts("\t\t(open failed)");
-		return B_ERROR;
-	}
-
-	Handle *device = new(nothrow) Handle(handle);
-	if (device == NULL)
-		return B_NO_MEMORY;
-
-	devicesList->Add(device);
-	return B_OK;
+	// "bootpath" is the path Open Firmware used to load this boot loader
+	// itself: a device path plus a ":<boot-partition>,\haikuloader.elf"
+	// argument. That boot-partition number is a CHRP/PReP bootstrap-only
+	// pseudo partition used just to locate the loader image, not a
+	// generically openable block device - re-opening it (with or without
+	// the file part, with or without the ":0" disk-label-bypass argument
+	// used below in platform_add_block_devices()) fails. Worse, on this
+	// firmware a failed open attempt against the device leaves it in a
+	// state where a *second* open of the same underlying device (e.g.
+	// the one platform_add_block_devices() does moments later while
+	// scanning for partitions) hangs indefinitely instead of failing.
+	// So don't attempt to open the boot device here at all; just defer
+	// entirely to the scan in platform_add_block_devices(), which finds
+	// and opens every block device - including this one - itself.
+	return B_ENTRY_NOT_FOUND;
 }
 
 
@@ -200,12 +197,35 @@ platform_add_block_devices(stage2_args *args, NodeList *devicesList)
 		// SUN's OpenBoot:
 		//strcpy(path + strlen(path), ":nolabel");
 		// Apple:
+		char bypassPath[256];
+		strlcpy(bypassPath, path, sizeof(bypassPath));
 		if (gMachine & MACHINE_MAC)
-			strcpy(path + strlen(path), ":0");
+			strlcat(bypassPath, ":0", sizeof(bypassPath));
 
-		printf("\t%s\n", path);
+		printf("\t%s\n", bypassPath);
 
-		intptr_t handle = of_open(path);
+		// Try the disk-label bypass path first (this is the original,
+		// historical behavior). We deliberately do NOT retry with a
+		// second open() call on ATAPI/CD-ROM media - a second open of
+		// the same underlying device can hang outright on this
+		// platform rather than cleanly failing, and this is true even
+		// when the second attempt uses a different argument string (not
+		// just an identical retry). For non-ATAPI disks, a second
+		// open() using the plain path (letting the real disk-label
+		// package parse the partition map) is safe and needed for at
+		// least some disks where the bypass path fails to open at all.
+		bool isAtapi = false;
+		for (const char *scan = path; *scan != '\0'; scan++) {
+			if (!strncmp(scan, "cdrom", 5)) {
+				isAtapi = true;
+				break;
+			}
+		}
+		intptr_t handle = of_open(bypassPath);
+		if (handle == OF_FAILED && (gMachine & MACHINE_MAC) && !isAtapi) {
+			printf("\t\t(bypass path failed, trying plain path %s)\n", path);
+			handle = of_open(path);
+		}
 		if (handle == OF_FAILED) {
 			puts("\t\t(failed)");
 			continue;

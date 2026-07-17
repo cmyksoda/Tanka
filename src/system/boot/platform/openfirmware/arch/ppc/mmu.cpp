@@ -313,10 +313,17 @@ find_allocated_ranges(void *oldPageTable, void *pageTable,
 	uint32 total = 0;
 	dprintf("found %d translations\n", length);
 
+	{
+		void *here = (void *)&find_allocated_ranges;
+		segment_descriptor sr = ppc_get_segment_register(here);
+		dprintf("TRACE: our code at %p, current SR.VSID = %lu\n", here,
+			(unsigned long)sr.virtual_segment_id);
+	}
+
 	for (int i = 0; i < length; i++) {
 		struct translation_map *map = &translations[i];
 		bool keepRange = true;
-		TRACE("%i: map: %p, length %d -> physical: %p, mode %d\n", i,
+		dprintf("%i: map: %p, length %d -> physical: %p, mode %d\n", i,
 			map->virtual_address, map->length,
 			map->physical_address, map->mode);
 
@@ -826,8 +833,18 @@ arch_mmu_init(void)
 	// until we're about to take over the page table - we're mapping
 	// pages into our table using these values
 
-	for (int32 i = 0; i < 16; i++)
-		sSegments[i].virtual_segment_id = i;
+	// Preserve whatever VSIDs Open Firmware already has active for each
+	// segment, rather than inventing our own (e.g. "= i"). Our new page
+	// table is populated using these same VSIDs below, so when we later
+	// install the new page table (SDR1) there is never a moment where
+	// the live segment registers and the active page table disagree on
+	// the VSID scheme - which otherwise causes an immediate, silent
+	// translation fault for whichever segment covers our own running code.
+	for (int32 i = 0; i < 16; i++) {
+		sSegments[i].virtual_segment_id
+			= ppc_get_segment_register((void *)(i * 0x10000000))
+				.virtual_segment_id;
+	}
 
 	// find already allocated ranges of physical memory
 	// and the virtual address space
@@ -883,7 +900,9 @@ arch_mmu_init(void)
 
 	// Set the Open Firmware memory callback. From now on the Open Firmware
 	// will ask us for memory.
+	dprintf("TRACE: before arch_set_callback\n");
 	arch_set_callback();
+	dprintf("TRACE: after arch_set_callback\n");
 
 	// set up new page table and turn on translation again
 
@@ -891,20 +910,28 @@ arch_mmu_init(void)
 		ppc_set_segment_register((void *)(i * 0x10000000), sSegments[i]);
 			// one segment describes 256 MB of memory
 	}
+	dprintf("TRACE: after segment registers set\n");
 
 	ppc_set_page_table(physicalTable, tableSize);
+	dprintf("TRACE: after ppc_set_page_table\n");
 	invalidate_tlb();
+	dprintf("TRACE: after invalidate_tlb\n");
 
 	if (!realMode) {
 		// clear BATs
 		reset_ibats();
+		dprintf("TRACE: after reset_ibats\n");
 		reset_dbats();
+		dprintf("TRACE: after reset_dbats\n");
 		ppc_sync();
 		isync();
+		dprintf("TRACE: after ppc_sync/isync\n");
 	}
 
+	dprintf("TRACE: before set_msr (enabling translation)\n");
 	set_msr(MSR_MACHINE_CHECK_ENABLED | MSR_FP_AVAILABLE
 		| MSR_INST_ADDRESS_TRANSLATION | MSR_DATA_ADDRESS_TRANSLATION);
+	dprintf("TRACE: after set_msr (translation now on)\n");
 
 	// set kernel args
 
