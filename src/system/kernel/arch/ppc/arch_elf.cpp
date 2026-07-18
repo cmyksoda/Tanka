@@ -41,6 +41,42 @@ write_word32(addr_t P, Elf32_Word value)
 }
 
 
+// PowerPC I/D caches are not coherent: a plain store through the data path
+// (as used to patch relocations into already-loaded code, e.g. the PLT
+// "b <addr>" stubs written for R_PPC_JMP_SLOT below) is not guaranteed to
+// be visible to subsequent instruction fetches until the modified line is
+// flushed from the data cache and the corresponding instruction cache line
+// is explicitly invalidated. See the PowerPC Programming Environments
+// Manual, "Ensuring the Coherency of Memory and I-Cache" / self-modifying
+// code sequence. Mirrors arch_cpu_sync_icache() in arch_cpu.cpp, but is
+// self-contained since this file is also compiled into the boot loader
+// under _BOOT_MODE, where arch_cpu.cpp is not available.
+#define ELF_RELOC_CACHELINE 32
+
+static inline void
+sync_icache_for_relocation(addr_t address, size_t len)
+{
+	int off = (unsigned int)address & (ELF_RELOC_CACHELINE - 1);
+	int remaining = (int)(len + off);
+
+	char* p = (char*)address - off;
+	do {
+		asm volatile ("dcbst 0,%0" :: "r"(p));
+		p += ELF_RELOC_CACHELINE;
+	} while ((remaining -= ELF_RELOC_CACHELINE) > 0);
+	asm volatile ("sync");
+
+	remaining = (int)(len + off);
+	p = (char*)address - off;
+	do {
+		asm volatile ("icbi 0,%0" :: "r"(p));
+		p += ELF_RELOC_CACHELINE;
+	} while ((remaining -= ELF_RELOC_CACHELINE) > 0);
+	asm volatile ("sync");
+	asm volatile ("isync");
+}
+
+
 static inline void
 write_word30(addr_t P, Elf32_Word value)
 {
@@ -308,6 +344,7 @@ dprintf("jumpOffset: %p\n", (void*)jumpOffset);
 					// "b" instruction: opcode = 18, AA = 0, LK = 0
 					// address: 24 high-order bits of 26 bit offset
 					*(uint32*)P = 0x48000000 | ((jumpOffset) & 0x03fffffc);
+					sync_icache_for_relocation(P, sizeof(uint32));
 				}
 				break;
 			}
