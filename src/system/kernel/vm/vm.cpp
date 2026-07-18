@@ -397,6 +397,9 @@ private:
 //	#pragma mark - page mappings allocation
 
 
+static void debug_checkpoint(int n);
+
+
 static void
 create_page_mappings_object_caches()
 {
@@ -418,10 +421,12 @@ create_page_mappings_object_caches()
 		object_cache* cache = create_object_cache_etc(name,
 			sizeof(vm_page_mapping), 0, 0, 64, 128, CACHE_LARGE_SLAB, NULL, NULL,
 			NULL, NULL);
+		debug_checkpoint(20);
 		if (cache == NULL)
 			panic("failed to create page mappings object_cache");
 
 		object_cache_set_minimum_reserve(cache, 1024);
+		debug_checkpoint(21);
 		sPageMappingsObjectCaches[i] = cache;
 	}
 }
@@ -3569,6 +3574,42 @@ reserve_boot_loader_ranges(kernel_args* args)
 }
 
 
+static kernel_args* sDebugCheckpointArgs;
+
+
+static void
+debug_checkpoint(kernel_args* args, int n)
+{
+	sDebugCheckpointArgs = args;
+
+	if (!args->frame_buffer.enabled)
+		return;
+
+	uint8* fb = (uint8*)(addr_t)args->frame_buffer.physical_buffer.start;
+	int blockSize = 20;
+	int bpp = args->frame_buffer.depth / 8;
+	if (bpp <= 0)
+		return;
+	uint32 bytesPerRow = args->frame_buffer.bytes_per_row;
+	int rowOffset = 30;
+
+	for (int y = 0; y < blockSize; y++) {
+		uint8* row = fb + (size_t)(y + rowOffset) * bytesPerRow
+			+ (size_t)n * (blockSize + 4) * bpp;
+		for (int x = 0; x < blockSize * bpp; x++)
+			row[x] = ((x / bpp + y) & 1) ? 0x00 : 0xff;
+	}
+}
+
+
+static void
+debug_checkpoint(int n)
+{
+	if (sDebugCheckpointArgs != NULL)
+		debug_checkpoint(sDebugCheckpointArgs, n);
+}
+
+
 /*!	The main entrance point to initialize the VM. */
 status_t
 vm_init(kernel_args* args)
@@ -3576,29 +3617,40 @@ vm_init(kernel_args* args)
 	status_t err = 0;
 
 	TRACE(("vm_init: entry\n"));
+	debug_checkpoint(args, 0);
 	err = arch_vm_translation_map_init(args, &sPhysicalPageMapper);
+	debug_checkpoint(args, 1);
 	err = arch_vm_init(args);
+	debug_checkpoint(args, 2);
 
 	// initialize some globals
 	vm_page_init_num_pages(args);
+	debug_checkpoint(args, 3);
 
 	slab_init(args);
+	debug_checkpoint(args, 4);
 	heap_init(args);
+	debug_checkpoint(args, 5);
 
 	// initialize the free page list and physical page mapper
 	vm_page_init(args);
+	debug_checkpoint(args, 6);
 
 	// initialize the cache allocators
 	vm_cache_init(args);
+	debug_checkpoint(args, 7);
 
 	{
 		status_t error = VMAreas::Init();
 		if (error != B_OK)
 			panic("vm_init: error initializing areas map\n");
 	}
+	debug_checkpoint(args, 8);
 
 	VMAddressSpace::Init();
+	debug_checkpoint(args, 9);
 	reserve_boot_loader_ranges(args);
+	debug_checkpoint(args, 10);
 
 #if DEBUG_HEAPS
 	heap_init_post_area();
@@ -3607,14 +3659,20 @@ vm_init(kernel_args* args)
 	// Do any further initialization that the architecture dependant layers may
 	// need now
 	arch_vm_translation_map_init_post_area(args);
+	debug_checkpoint(args, 11);
 	arch_vm_init_post_area(args);
+	debug_checkpoint(args, 12);
 	vm_page_init_post_area(args);
+	debug_checkpoint(args, 13);
 	slab_init_post_area();
+	debug_checkpoint(args, 14);
 
 	vm_kernel_args_init_post_area(args);
+	debug_checkpoint(args, 15);
 
 	void* lastPage = (void*)ROUNDDOWN(~(addr_t)0, B_PAGE_SIZE);
 	vm_block_address_range("overflow protection", lastPage, B_PAGE_SIZE);
+	debug_checkpoint(args, 16);
 
 #if PARANOID_KERNEL_MALLOC
 	addr_t blockAddress = 0xcccccccc;
@@ -3649,12 +3707,15 @@ vm_init(kernel_args* args)
 #endif
 
 	create_page_mappings_object_caches();
+	debug_checkpoint(args, 17);
 
 	vm_debug_init();
+	debug_checkpoint(args, 18);
 
 	TRACE(("vm_init: exit\n"));
 
 	vm_cache_init_post_heap();
+	debug_checkpoint(args, 19);
 
 	return err;
 }

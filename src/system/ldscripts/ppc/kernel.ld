@@ -3,11 +3,20 @@ OUTPUT_ARCH(powerpc)
 
 ENTRY(_start)
 SEARCH_DIR("libgcc");
+
+PHDRS
+{
+	headers PT_PHDR PHDRS ;
+	text PT_LOAD FILEHDR PHDRS FLAGS(5) ;
+	data PT_LOAD ;
+	dynamic PT_DYNAMIC ;
+}
+
 SECTIONS
 {
 	. = 0x80000000 + SIZEOF_HEADERS;
 
-	.interp : { *(.interp) }
+	.interp : { *(.interp) } : text
 	.hash : { *(.hash) }
 	.dynsym : { *(.dynsym) }
 	.dynstr : { *(.dynstr) }
@@ -69,10 +78,10 @@ SECTIONS
 	. = ALIGN(0x1000) + 0x1000 + (. & (0x1000 - 1));
 
 	__ctor_list = .;
-	.ctors : { *(.ctors) }
+	.ctors : { *(.ctors) } : data
 	__ctor_end = .;
 
-	.dynamic : { *(.dynamic) }
+	.dynamic : { *(.dynamic) } :dynamic :data
 
 	__data_start = .;
 	.data : { *(.data .gnu.linkonce.d.*) }
