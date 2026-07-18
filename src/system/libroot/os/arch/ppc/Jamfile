@@ -13,7 +13,7 @@ for architectureObject in [ MultiArchSubDirSetup ppc ] {
 		SEARCH_SOURCE += [ FDirName $(SUBDIR) $(DOTDOT) generic ] ;
 
 		MergeObject <$(architecture)>os_arch_$(TARGET_ARCH).o :
-			atomic.S
+			atomic.c
 			byteorder.S
 			compatibility.c	# only here until the places where those functions
 							# are used are fixed
