@@ -149,6 +149,63 @@ ha(Elf32_Word value)
 }
 
 
+// R_PPC_JMP_SLOT relocations whose target is more than 24 bits away from
+// the PLT slot can't be reached with a single fabricated "b <addr>"
+// instruction (the only thing that fits in a slot's 8 bytes/2 instruction
+// words - confirmed via readelf: consecutive .rela.plt r_offset values are
+// exactly 8 bytes apart). Route those through a small pool of "long jump
+// island" trampolines instead: a linker script that wants to opt into this
+// (currently just src/system/ldscripts/ppc/kernel.ld) reserves
+// PLT_TRAMPOLINE_POOL_SIZE bytes immediately before the linker's own
+// auto-generated .plt content, with a magic sentinel word at the very
+// start so this code can verify the reservation is actually present
+// before trusting the space - any image whose linker script doesn't
+// reserve it (the sentinel simply won't match, since that memory is
+// whatever real content preceded .plt in that image) safely falls back to
+// the old skip-only behavior instead of corrupting unrelated code. Each
+// trampoline is a full 4-instruction absolute jump ("lis/ori/mtctr/bctr",
+// the standard way to reach an arbitrary 32-bit address on ppc32 - there's
+// no single instruction that loads a full 32-bit immediate, and no branch
+// form, relative or absolute, that encodes one either) - the PLT slot
+// itself only ever needs a plain "b" to its assigned trampoline, which is
+// guaranteed in-range since the pool lives inside the same image, well
+// under the 24-bit branch range away.
+#define PLT_TRAMPOLINE_POOL_MAGIC	0x504c5442	// "PLTB"
+#define PLT_TRAMPOLINE_COUNT		256
+#define PLT_TRAMPOLINE_SIZE		16	// 4 instructions
+#define PLT_TRAMPOLINE_POOL_HEADER_SIZE	4	// the magic sentinel word
+#define PLT_TRAMPOLINE_POOL_SIZE \
+	(PLT_TRAMPOLINE_POOL_HEADER_SIZE + PLT_TRAMPOLINE_COUNT * PLT_TRAMPOLINE_SIZE)
+
+
+static addr_t
+find_plt_trampoline_pool(addr_t nearAddress)
+{
+	// The linker's own auto-generated .plt content is preceded both by
+	// kernel.ld's explicit trampoline-pool reservation and by ld's own
+	// internal PPC PLT0-style header (observed to add an extra 72-byte
+	// gap with the toolchain this was built against, but that's an
+	// implementation detail of the binutils PPC backend, not guaranteed
+	// stable across versions, so it's not worth hardcoding). Search
+	// backward for the magic sentinel instead of assuming a fixed gap.
+	// nearAddress can be any PLT slot's own address P, not just the first
+	// one - R_PPC_JMP_SLOT relocations turn up in both .rela.plt and the
+	// general .rela table (confirmed at runtime: a handful of JMP_SLOT
+	// entries appear mixed into the much larger .rela table alongside
+	// R_PPC_RELATIVE and friends) - so the search needs to cover the
+	// entire .plt section's size (~22 KB observed for this kernel, mostly
+	// driven by relocation count), not just the small gap right before
+	// the trampoline pool itself. 128 KB is a generous upper bound.
+	addr_t address = nearAddress & ~(addr_t)3;
+	for (int32 i = 0; i < 0x20000 / 4; i++) {
+		if (*(uint32*)address == PLT_TRAMPOLINE_POOL_MAGIC)
+			return address;
+		address -= 4;
+	}
+	return 0;
+}
+
+
 #ifdef _BOOT_MODE
 status_t
 boot_arch_elf_relocate_rela(struct preloaded_elf32_image *image,
@@ -168,6 +225,9 @@ arch_elf_relocate_rela(struct elf_image_info *image,
 
 	addr_t G = 0;		// GOT address
 	addr_t L = 0;		// PLT address
+
+	int32 trampolinesUsed = 0;
+		// see the PLT_TRAMPOLINE_* comment above ha()
 
 	#define P	((addr_t)(image->text_region.delta + rel[i].r_offset))
 	#define A	((addr_t)rel[i].r_addend)
@@ -331,28 +391,42 @@ dprintf("R_PPC_GOT16 overflow\n");
 				addr_t jumpOffset = S - P;
 				if ((jumpOffset & 0xfc000000) != 0
 					&& (~jumpOffset & 0xfe000000) != 0) {
-					// Offset > 24 bit.
-					// TODO: Implement a proper long-branch/indirect PLT
-					// trampoline for this case (System V PPC ABI supplement,
-					// p. 5-6). Until then, leave this one PLT slot unwritten
-					// (a call through it will crash if ever taken) but do
-					// NOT abort the relocation pass entirely: this used to
-					// "return B_ERROR" here, which propagates straight out
-					// of ELFLoader<Class>::Relocate() / elf_relocate() and
-					// skips ALL remaining relocations for this image -
-					// including, critically, the entire subsequent
-					// image->rela table (R_PPC_RELATIVE and friends), which
-					// is what every other absolute/position-dependent
-					// pointer in the image depends on. One out-of-range PLT
-					// slot was silently corrupting every relocation after
-					// it, producing exactly the "garbage function pointer /
-					// self-corrupting exception vector" crash signature
-					// chased for most of this debugging session - not just
-					// leaving this single call target broken.
-					dprintf("arch_elf_relocate_rela(): R_PPC_JMP_SLOT: "
-						"Offsets > 24 bit currently not supported! "
-						"Skipping this slot only.\n");
+					// Offset > 24 bit - see the PLT_TRAMPOLINE_* comment
+					// above ha() for the full explanation. This also
+					// replaces what used to be a "return B_ERROR" here,
+					// which propagated straight out of
+					// ELFLoader<Class>::Relocate() / elf_relocate() and
+					// skipped ALL remaining relocations for this image -
+					// including the entire subsequent image->rela table
+					// (R_PPC_RELATIVE and friends) - producing exactly the
+					// "garbage function pointer / self-corrupting
+					// exception vector" crash signature chased for most of
+					// this debugging session.
+					addr_t pltTrampolinePool = find_plt_trampoline_pool(P);
+					if (pltTrampolinePool != 0
+						&& trampolinesUsed < PLT_TRAMPOLINE_COUNT) {
+						addr_t island = pltTrampolinePool
+							+ PLT_TRAMPOLINE_POOL_HEADER_SIZE
+							+ trampolinesUsed * PLT_TRAMPOLINE_SIZE;
+						trampolinesUsed++;
+
+						uint32* code = (uint32*)island;
+						code[0] = 0x3c000000 | ha(S);	// lis   r0, S@ha
+						code[1] = 0x60000000 | lo(S);	// ori   r0, r0, S@l
+						code[2] = 0x7c0903a6;			// mtctr r0
+						code[3] = 0x4e800420;			// bctr
+						sync_icache_for_relocation(island, 4 * sizeof(uint32));
+
+						addr_t stubOffset = island - P;
+						*(uint32*)P = 0x48000000 | (stubOffset & 0x03fffffc);
+						sync_icache_for_relocation(P, sizeof(uint32));
+					} else {
+						dprintf("arch_elf_relocate_rela(): R_PPC_JMP_SLOT: "
+							"Offsets > 24 bit and no trampoline pool "
+							"available for this image! Skipping this slot "
+							"only.\n");
 dprintf("jumpOffset: %p\n", (void*)jumpOffset);
+					}
 					break;
 				} else {
 					// Offset <= 24 bit

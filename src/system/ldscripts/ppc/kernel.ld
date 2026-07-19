@@ -82,7 +82,22 @@ SECTIONS
 	.rela.plt : { *(.rela.plt) }
 
 	.init : { *(.init) } =0x60000000
-	.plt : { *(.plt) }
+
+	/* Reserve space for arch_elf_relocate_rela()'s R_PPC_JMP_SLOT
+	   "long jump island" trampoline pool (see the PLT_TRAMPOLINE_* comment
+	   in src/system/kernel/arch/ppc/arch_elf.cpp above ha()) immediately
+	   before the linker's own auto-generated .plt content. The leading
+	   magic word lets that code verify at relocation time that this
+	   reservation is genuinely present (as opposed to whatever real
+	   content would otherwise precede .plt) before writing trampoline
+	   code into it - keep PLT_TRAMPOLINE_POOL_MAGIC/_COUNT/_SIZE in sync
+	   with the constants there if either ever changes. */
+	.plt : {
+		__plt_trampolines_start = .;
+		LONG(0x504c5442);
+		. = __plt_trampolines_start + 4 + 256 * 16;
+		*(.plt)
+	}
 
 	/* text/read-only data */
 	.text :	{
