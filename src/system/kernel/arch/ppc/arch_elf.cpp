@@ -332,12 +332,28 @@ dprintf("R_PPC_GOT16 overflow\n");
 				if ((jumpOffset & 0xfc000000) != 0
 					&& (~jumpOffset & 0xfe000000) != 0) {
 					// Offset > 24 bit.
-					// TODO: Implement!
-					// See System V PPC ABI supplement, p. 5-6!
+					// TODO: Implement a proper long-branch/indirect PLT
+					// trampoline for this case (System V PPC ABI supplement,
+					// p. 5-6). Until then, leave this one PLT slot unwritten
+					// (a call through it will crash if ever taken) but do
+					// NOT abort the relocation pass entirely: this used to
+					// "return B_ERROR" here, which propagates straight out
+					// of ELFLoader<Class>::Relocate() / elf_relocate() and
+					// skips ALL remaining relocations for this image -
+					// including, critically, the entire subsequent
+					// image->rela table (R_PPC_RELATIVE and friends), which
+					// is what every other absolute/position-dependent
+					// pointer in the image depends on. One out-of-range PLT
+					// slot was silently corrupting every relocation after
+					// it, producing exactly the "garbage function pointer /
+					// self-corrupting exception vector" crash signature
+					// chased for most of this debugging session - not just
+					// leaving this single call target broken.
 					dprintf("arch_elf_relocate_rela(): R_PPC_JMP_SLOT: "
-						"Offsets > 24 bit currently not supported!\n");
+						"Offsets > 24 bit currently not supported! "
+						"Skipping this slot only.\n");
 dprintf("jumpOffset: %p\n", (void*)jumpOffset);
-					return B_ERROR;
+					break;
 				} else {
 					// Offset <= 24 bit
 					// 0:5 opcode (= 18), 6:29 address, 30 AA, 31 LK

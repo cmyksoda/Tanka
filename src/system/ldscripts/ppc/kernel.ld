@@ -60,7 +60,29 @@ SECTIONS
 		*(.rela.sbss2 .rela.sbss2.* .rela.gnu.linkonce.sb2.*)
 		*(.rela.bss .rela.bss.* .rela.gnu.linkonce.b.*)
 	}
+
+	/* Unlike every other architecture's kernel.ld (arm, arm64, m68k,
+	   riscv64, sparc, x86, x86_64 - all of which explicitly place .plt and
+	   .rela.plt), this script never mentioned .plt at all. GNU ld still
+	   emits it (PowerPC PLT stubs, patched in-place at boot time by
+	   arch_elf_relocate_rela()'s R_PPC_JMP_SLOT handling), but as an
+	   unmentioned "orphan section" ld appends it wherever it likes - which,
+	   in practice, landed it entirely past _end, outside the range the
+	   boot loader actually maps for the kernel image. Any call resolved
+	   through a PLT slot out there branches into unmapped memory and
+	   crashes immediately - non-deterministically, since whether a given
+	   call happens to go through the PLT (vs. a direct, statically
+	   resolved branch) depends on subtle codegen/linking details that
+	   differ by call site and build. This is very likely the actual root
+	   cause behind most of the "self-corrupting exception vector at a
+	   seemingly random point in early boot" crashes chased throughout this
+	   investigation. Placing .rela.plt/.plt explicitly - matching every
+	   other arch's script - keeps them inside the mapped text segment.
+	*/
+	.rela.plt : { *(.rela.plt) }
+
 	.init : { *(.init) } =0x60000000
+	.plt : { *(.plt) }
 
 	/* text/read-only data */
 	.text :	{

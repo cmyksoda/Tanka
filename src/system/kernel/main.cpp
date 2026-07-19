@@ -97,6 +97,22 @@ non_boot_cpu_init(void* args, int currentCPU)
 extern "C" int
 _start(kernel_args *bootKernelArgs, int currentCPU)
 {
+	// arch_start_kernel() (src/system/boot/platform/openfirmware/arch/ppc/
+	// arch_start_kernel.S) branches straight into this function without
+	// ever touching MSR - so whatever interrupt-enable state the boot
+	// loader/OpenFirmware happened to be running with (typically enabled)
+	// carries straight over. Nothing from here until the deliberate
+	// enable_interrupts() call near the end of main() ever disables
+	// interrupts, which means a decrementer (or other) exception can be
+	// taken at essentially any point during early boot - including before
+	// the exception vector table has been copied into place by
+	// arch_int_init_post_vm() - producing the self-corrupting "frozen
+	// PC=0x10" crash signature at an unpredictable, timing-dependent
+	// instruction each run. Force interrupts off immediately on entry;
+	// they stay off until main() explicitly re-enables them once the
+	// kernel is actually ready to handle exceptions.
+	disable_interrupts();
+
 	if (bootKernelArgs->version == CURRENT_KERNEL_ARGS_VERSION
 		&& bootKernelArgs->kernel_args_size == kernel_args_size_v1) {
 		sKernelArgs.ucode_data = NULL;
