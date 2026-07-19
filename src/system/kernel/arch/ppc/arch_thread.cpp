@@ -118,53 +118,39 @@ void
 arch_thread_init_kthread_stack(Thread* thread, void* _stack, void* _stackTop,
 	void (*function)(void*), const void* data)
 {
-#if 0
-	addr_t *kstack = (addr_t *)t->kernel_stack_base;
-	addr_t *kstackTop = (addr_t *)t->kernel_stack_top;
-
-	// clear the kernel stack
-#ifdef DEBUG_KERNEL_STACKS
-#	ifdef STACK_GROWS_DOWNWARDS
-	memset((void *)((addr_t)kstack + KERNEL_STACK_GUARD_PAGES * B_PAGE_SIZE), 0,
-		KERNEL_STACK_SIZE);
-#	else
-	memset(kstack, 0, KERNEL_STACK_SIZE);
-#	endif
-#else
-	memset(kstack, 0, KERNEL_STACK_SIZE);
-#endif
+	addr_t *kstackTop = (addr_t *)_stackTop;
 
 	// space for frame pointer and return address, and stack frames must be
 	// 16 byte aligned
 	kstackTop -= 2;
 	kstackTop = (addr_t*)((addr_t)kstackTop & ~0xf);
 
-	// LR, CR, r2, r13-r31, f13-f31, as pushed by ppc_context_switch()
-	kstackTop -= 22 + 2 * 19;
+	// LR, CR, r2, r3, r13-r31, f13-f31, as restored by ppc_context_switch()
+	kstackTop -= 23 + 2 * 19;
+	memset(kstackTop, 0, (23 + 2 * 19) * sizeof(addr_t));
 
-	// let LR point to ppc_kernel_thread_root()
-	kstackTop[0] = (addr_t)&ppc_kernel_thread_root;
-
-	// the arguments of ppc_kernel_thread_root() are the functions to call,
-	// provided in registers r13-r15
-	kstackTop[3] = (addr_t)entry_func;
-	kstackTop[4] = (addr_t)start_func;
-	kstackTop[5] = (addr_t)exit_func;
+	// Let LR point directly at the thread's entry function, and smuggle
+	// "data" into r3 (the first argument register in the PowerPC SVR4
+	// calling convention) - when ppc_context_switch() restores this brand
+	// new thread for the first time, its closing "blr" branches straight
+	// into function(data). This mirrors every other working architecture's
+	// implementation of this function (e.g. arch/arm/arch_thread.cpp); the
+	// old three-function ppc_kernel_thread_root() trampoline this function
+	// used to target is a leftover from a since-removed thread-creation
+	// API and no longer matches this function's (function, data) signature.
+	kstackTop[0] = (addr_t)function;
+	kstackTop[3] = (addr_t)data;
 
 	// save this stack position
-	t->arch_info.sp = (void *)kstackTop;
-
-	return B_OK;
-#else
-	panic("arch_thread_init_kthread_stack(): Implement me!");
-#endif
+	thread->arch_info.sp = (void *)kstackTop;
 }
 
 
 status_t
 arch_thread_init_tls(Thread *thread)
 {
-	// TODO: Implement!
+	thread->user_local_storage =
+		thread->user_stack_base + thread->user_stack_size;
 	return B_OK;
 }
 

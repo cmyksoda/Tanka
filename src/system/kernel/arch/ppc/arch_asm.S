@@ -290,8 +290,9 @@ FUNCTION(ppc_context_switch):
 	lwzu		%r0, 4(%r1)
 	mtcr		%r0
 
-	// r2, r13-31
+	// r2, r3, r13-31
 	lwzu		%r2, 4(%r1)
+	lwzu		%r3, 4(%r1)
 	lwzu		%r13, 4(%r1)
 	lwzu		%r14, 4(%r1)
 	lwzu		%r15, 4(%r1)
