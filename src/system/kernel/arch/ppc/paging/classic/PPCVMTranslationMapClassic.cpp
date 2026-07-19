@@ -697,8 +697,15 @@ void
 PPCVMTranslationMapClassic::UnmapPages(VMArea* area, addr_t base, size_t size,
 	bool updatePageQueue, bool deletingAddressSpace)
 {
-	panic("%s: UNIMPLEMENTED", __FUNCTION__);
-#if 0//X86
+	// NOTE: unlike the dead x86 code this replaces, the classic ppc page
+	// table is a hashed table (see LookupPageTableEntry()), not a two-level
+	// directory/table structure - there is no page-directory-entry check to
+	// skip whole unmapped regions with, so this simply walks every page in
+	// [base, base + size) individually, the same way UnmapPage() handles a
+	// single page. The per-page work is batched under one lock acquisition
+	// and the resulting page-area mappings are queued and freed after
+	// unlocking, exactly as UnmapPage() and the (still-live) x86 reference
+	// implementation this was adapted from both do.
 	if (size == 0)
 		return;
 
@@ -708,61 +715,34 @@ PPCVMTranslationMapClassic::UnmapPages(VMArea* area, addr_t base, size_t size,
 	TRACE("PPCVMTranslationMapClassic::UnmapPages(%p, %#" B_PRIxADDR ", %#"
 		B_PRIxADDR ")\n", area, start, end);
 
-	page_directory_entry* pd = fPagingStructures->pgdir_virt;
+	RecursiveLocker locker(fLock);
+
+	if (area->cache_type == CACHE_TYPE_DEVICE) {
+		for (addr_t address = start; address <= end; address += B_PAGE_SIZE) {
+			if (RemovePageTableEntry(address))
+				fMapCount--;
+		}
+		return;
+	}
 
 	VMAreaMappings queue;
 
-	RecursiveLocker locker(fLock);
-
-	do {
-		int index = VADDR_TO_PDENT(start);
-		if ((pd[index] & PPC_PDE_PRESENT) == 0) {
-			// no page table here, move the start up to access the next page
-			// table
-			start = ROUNDUP(start + 1, kPageTableAlignment);
+	for (addr_t address = start; address <= end; address += B_PAGE_SIZE) {
+		page_table_entry* entry = LookupPageTableEntry(address);
+		if (entry == NULL)
 			continue;
-		}
 
-		Thread* thread = thread_get_current_thread();
-		ThreadCPUPinner pinner(thread);
+		page_num_t pageNumber = entry->physical_page_number;
+		bool accessed = entry->referenced;
+		bool modified = entry->changed;
 
-		page_table_entry* pt = (page_table_entry*)fPageMapper->GetPageTableAt(
-			pd[index] & PPC_PDE_ADDRESS_MASK);
+		RemovePageTableEntry(address);
 
-		for (index = VADDR_TO_PTENT(start); (index < 1024) && (start < end);
-				index++, start += B_PAGE_SIZE) {
-			page_table_entry oldEntry
-				= PPCPagingMethodClassic::ClearPageTableEntry(&pt[index]);
-			if ((oldEntry & PPC_PTE_PRESENT) == 0)
-				continue;
+		fMapCount--;
 
-			fMapCount--;
-
-			if ((oldEntry & PPC_PTE_ACCESSED) != 0) {
-				// Note, that we only need to invalidate the address, if the
-				// accessed flags was set, since only then the entry could have
-				// been in any TLB.
-				if (!deletingAddressSpace)
-					InvalidatePage(start);
-			}
-
-			if (area->cache_type != CACHE_TYPE_DEVICE) {
-				page_num_t page = (oldEntry & PPC_PTE_ADDRESS_MASK) / B_PAGE_SIZE;
-				PageUnmapped(area, page,
-					(oldEntry & PPC_PTE_ACCESSED) != 0,
-					(oldEntry & PPC_PTE_DIRTY) != 0,
-					updatePageQueue, &queue);
-			}
-		}
-
-		Flush();
-			// flush explicitly, since we directly use the lock
-	} while (start != 0 && start < end);
-
-	// TODO: As in UnmapPage() we can lose page dirty flags here. ATM it's not
-	// really critical here, as in all cases this method is used, the unmapped
-	// area range is unmapped for good (resized/cut) and the pages will likely
-	// be freed.
+		PageUnmapped(area, pageNumber, accessed, modified, updatePageQueue,
+			&queue);
+	}
 
 	locker.Unlock();
 
@@ -772,7 +752,6 @@ PPCVMTranslationMapClassic::UnmapPages(VMArea* area, addr_t base, size_t size,
 		| (isKernelSpace ? CACHE_DONT_LOCK_KERNEL_SPACE : 0);
 	while (vm_page_mapping* mapping = queue.RemoveHead())
 		vm_free_page_mapping(mapping->page->physical_page_number, mapping, freeFlags);
-#endif
 }
 
 
