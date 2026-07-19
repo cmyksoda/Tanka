@@ -501,11 +501,33 @@ arch_mmu_allocate(void *_virtualAddress, size_t size, uint8 _protection,
 	else
 		protection = PAGE_READ_ONLY;
 
-	// If no address is given, use the KERNEL_BASE as base address, since
+	// If no address is given, use an address well above KERNEL_BASE, since
 	// that avoids trouble in the kernel, when we decide to keep the region.
+	//
+	// NOTE: this used to default to exactly KERNEL_BASE. That is a real
+	// problem: kernel_args_malloc() (src/system/boot/loader/kernel_args.cpp,
+	// shared/generic code, not ppc-specific) allocates its first 512 KB
+	// pool chunk via platform_allocate_region() with no address preference
+	// at all - which used to land it at exactly KERNEL_BASE too, via this
+	// same fallback. Since the kernel image itself is also allocated
+	// starting at KERNEL_BASE (see ELFLoader<Class>::Load(), which prefers
+	// but does not strictly require that address), whichever of the two
+	// allocations happens to run first silently claims KERNEL_BASE, and
+	// the other one - if it is the kernel - ends up loaded somewhere else
+	// entirely. That is fatal for the kernel specifically: it relocates
+	// itself (including position-dependent .got2 / R_PPC_RELATIVE entries)
+	// assuming it will run from wherever it actually got allocated, but
+	// later unconditionally maps itself to execute from KERNEL_BASE via
+	// its own MMU setup - without ever redoing those relocations for the
+	// new address. Most code survives the silent move fine, since normal
+	// branches and calls are PC-relative; absolute-address tables like
+	// .got2 do not, and end up wrong by exactly the gap between the two
+	// addresses. Push the fallback well past where the kernel could
+	// plausibly need to grow, so "no preference" allocations stop
+	// contending for the one address that truly must be exact.
 	void *virtualAddress = _virtualAddress;
 	if (!virtualAddress)
-		virtualAddress = (void*)KERNEL_BASE;
+		virtualAddress = (void*)(KERNEL_BASE + 0x10000000);
 
 	// find free address large enough to hold "size"
 	virtualAddress = find_free_virtual_range(virtualAddress, size);

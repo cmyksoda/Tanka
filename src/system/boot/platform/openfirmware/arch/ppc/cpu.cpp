@@ -105,7 +105,23 @@ boot_arch_cpu_init(void)
 
 	// allocate the kernel stacks (the memory stuff is already initialized
 	// at this point)
-	addr_t stack = (addr_t)arch_mmu_allocate((void*)0x80000000,
+	//
+	// NOTE: this used to request the exact address 0x80000000 (KERNEL_BASE)
+	// for the stack allocation. That collides with the address the kernel
+	// image itself needs to load at: whichever of the two allocations runs
+	// first claims 0x80000000, silently pushing the other one to a later
+	// address. For the kernel specifically, being loaded away from its
+	// intended KERNEL_BASE breaks every position-dependent (.got2,
+	// R_PPC_RELATIVE) reference baked in by the relocator, which relocates
+	// assuming the kernel runs from wherever it actually got allocated -
+	// while the kernel later unconditionally maps itself to run from
+	// KERNEL_BASE via its own MMU setup, without redoing those relocations.
+	// (Passing NULL instead doesn't help: arch_mmu_allocate() explicitly
+	// defaults a NULL address to KERNEL_BASE too, so it's the exact same
+	// request under a different spelling.) The stack has no fixed-address
+	// requirement of its own, so just point it well above where the kernel
+	// image could plausibly reach, out of the way entirely.
+	addr_t stack = (addr_t)arch_mmu_allocate((void*)(0x80000000 + 0x10000000),
 		cpuCount * (KERNEL_STACK_SIZE + KERNEL_STACK_GUARD_PAGES * B_PAGE_SIZE),
 		B_READ_AREA | B_WRITE_AREA, false);
 	if (!stack) {
