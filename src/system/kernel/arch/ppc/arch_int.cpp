@@ -567,7 +567,19 @@ ppc_set_current_cpu_exception_context(struct ppc_cpu_exception_context *context)
 		return;
 	}
 
-	asm volatile("mtsprg0 %0" : : "r"(physicalPage + inPageOffset));
+	// physicalPage is a 64-bit phys_addr_t even on ppc32. Passing the
+	// 64-bit sum directly into the asm with a single "r" constraint makes
+	// GCC allocate a register *pair* for it - and expand %0 to the pair's
+	// first register, which holds the *high* word: always zero for any
+	// physical address below 4 GB. SPRG0 - the pointer the exception
+	// vector entry code loads its per-CPU context through - was therefore
+	// being set to literal 0 on every boot, making the first exception
+	// taken corrupt the vector code through a NULL context pointer (the
+	// "self-corrupting exception vector / frozen PC=0x10 loop" chased
+	// across this entire porting effort). Truncate to 32 bits explicitly
+	// before it reaches the asm operand.
+	uint32 contextPhysical = (uint32)physicalPage + inPageOffset;
+	asm volatile("mtsprg0 %0" : : "r"(contextPhysical));
 }
 
 

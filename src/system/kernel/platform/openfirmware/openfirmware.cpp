@@ -11,6 +11,36 @@
 
 // OpenFirmware entry function
 static intptr_t (*gCallOpenFirmware)(void *) = 0;
+
+
+#ifdef __POWERPC__
+// Apple's Open Firmware implementation uses SPRG0-3 internally, so any
+// client interface call can clobber them. The ppc kernel keeps the
+// physical address of the current CPU's exception context in SPRG0 (set
+// by ppc_set_current_cpu_exception_context(), read by the exception
+// vector entry code) - and on this platform the kernel debug console
+// writes via OF, i.e. every single dprintf() is an OF call. Without
+// preserving SPRG0 here, the first exception taken after any dprintf()
+// reads a garbage (typically zero) context pointer, and the vector code
+// corrupts itself trying to save state through it - producing the
+// "self-corrupting exception vector / frozen PC=0x10 loop" failure mode
+// this investigation chased across many sessions.
+static inline intptr_t
+call_open_firmware(void* args)
+{
+	uint32 sprg0;
+	asm volatile("mfsprg0 %0" : "=r"(sprg0));
+	intptr_t result = gCallOpenFirmware(args);
+	asm volatile("mtsprg0 %0" : : "r"(sprg0));
+	return result;
+}
+#else
+static inline intptr_t
+call_open_firmware(void* args)
+{
+	return gCallOpenFirmware(args);
+}
+#endif
 intptr_t gChosen;
 
 
@@ -53,7 +83,7 @@ of_call_client_function(const char *method, intptr_t numArgs,
 		args.args[i] = NULL;
 	}
 
-	if (gCallOpenFirmware(&args) == OF_FAILED)
+	if (call_open_firmware(&args) == OF_FAILED)
 		return OF_FAILED;
 
 	if (numReturns > 0) {
@@ -103,7 +133,7 @@ of_interpret(const char *command, intptr_t numArgs, intptr_t numReturns, ...)
 	}
 
 	// args.args[numArgs] is the "catch-result" return value
-	if (gCallOpenFirmware(&args) == OF_FAILED || args.args[numArgs])
+	if (call_open_firmware(&args) == OF_FAILED || args.args[numArgs])
 		return OF_FAILED;
 
 	if (numReturns > 0) {
@@ -155,7 +185,7 @@ of_call_method(uint32_t handle, const char *method, intptr_t numArgs,
 	}
 
 	// args.args[numArgs] is the "catch-result" return value
-	if (gCallOpenFirmware(&args) == OF_FAILED || args.args[numArgs])
+	if (call_open_firmware(&args) == OF_FAILED || args.args[numArgs])
 		return OF_FAILED;
 
 	if (numReturns > 0) {
@@ -184,7 +214,7 @@ of_finddevice(const char *device)
 		intptr_t	handle;
 	} args = {"finddevice", 1, 1, device, 0};
 
-	if (gCallOpenFirmware(&args) == OF_FAILED)
+	if (call_open_firmware(&args) == OF_FAILED)
 		return OF_FAILED;
 
 	return args.handle;
@@ -205,7 +235,7 @@ of_child(intptr_t node)
 		intptr_t	child;
 	} args = {"child", 1, 1, node, 0};
 
-	if (gCallOpenFirmware(&args) == OF_FAILED)
+	if (call_open_firmware(&args) == OF_FAILED)
 		return OF_FAILED;
 
 	return args.child;
@@ -226,7 +256,7 @@ of_peer(intptr_t node)
 		intptr_t	next_sibling;
 	} args = {"peer", 1, 1, node, 0};
 
-	if (gCallOpenFirmware(&args) == OF_FAILED)
+	if (call_open_firmware(&args) == OF_FAILED)
 		return OF_FAILED;
 
 	return args.next_sibling;
@@ -247,7 +277,7 @@ of_parent(intptr_t node)
 		intptr_t	parent;
 	} args = {"parent", 1, 1, node, 0};
 
-	if (gCallOpenFirmware(&args) == OF_FAILED)
+	if (call_open_firmware(&args) == OF_FAILED)
 		return OF_FAILED;
 
 	return args.parent;
@@ -267,7 +297,7 @@ of_instance_to_path(uint32_t instance, char *pathBuffer, intptr_t bufferSize)
 		intptr_t	size;
 	} args = {"instance-to-path", 3, 1, instance, pathBuffer, bufferSize, 0};
 
-	if (gCallOpenFirmware(&args) == OF_FAILED)
+	if (call_open_firmware(&args) == OF_FAILED)
 		return OF_FAILED;
 
 	return args.size;
@@ -285,7 +315,7 @@ of_instance_to_package(uint32_t instance)
 		intptr_t	package;
 	} args = {"instance-to-package", 1, 1, instance, 0};
 
-	if (gCallOpenFirmware(&args) == OF_FAILED)
+	if (call_open_firmware(&args) == OF_FAILED)
 		return OF_FAILED;
 
 	return args.package;
@@ -306,7 +336,7 @@ of_getprop(intptr_t package, const char *property, void *buffer, intptr_t buffer
 		intptr_t	size;
 	} args = {"getprop", 4, 1, package, property, buffer, bufferSize, 0};
 
-	if (gCallOpenFirmware(&args) == OF_FAILED)
+	if (call_open_firmware(&args) == OF_FAILED)
 		return OF_FAILED;
 
 	return args.size;
@@ -328,7 +358,7 @@ of_setprop(intptr_t package, const char *property, const void *buffer,
 		intptr_t	size;
 	} args = {"setprop", 4, 1, package, property, buffer, bufferSize, 0};
 
-	if (gCallOpenFirmware(&args) == OF_FAILED)
+	if (call_open_firmware(&args) == OF_FAILED)
 		return OF_FAILED;
 
 	return args.size;
@@ -347,7 +377,7 @@ of_getproplen(intptr_t package, const char *property)
 		intptr_t	size;
 	} args = {"getproplen", 2, 1, package, property, 0};
 
-	if (gCallOpenFirmware(&args) == OF_FAILED)
+	if (call_open_firmware(&args) == OF_FAILED)
 		return OF_FAILED;
 
 	return args.size;
@@ -367,7 +397,7 @@ of_nextprop(intptr_t package, const char *previousProperty, char *nextProperty)
 		intptr_t	flag;
 	} args = {"nextprop", 3, 1, package, previousProperty, nextProperty, 0};
 
-	if (gCallOpenFirmware(&args) == OF_FAILED)
+	if (call_open_firmware(&args) == OF_FAILED)
 		return OF_FAILED;
 
 	return args.flag;
@@ -387,7 +417,7 @@ of_package_to_path(intptr_t package, char *pathBuffer, intptr_t bufferSize)
 		intptr_t	size;
 	} args = {"package-to-path", 3, 1, package, pathBuffer, bufferSize, 0};
 
-	if (gCallOpenFirmware(&args) == OF_FAILED)
+	if (call_open_firmware(&args) == OF_FAILED)
 		return OF_FAILED;
 
 	return args.size;
@@ -408,7 +438,7 @@ of_open(const char *nodeName)
 		intptr_t	handle;
 	} args = {"open", 1, 1, nodeName, 0};
 
-	if (gCallOpenFirmware(&args) == OF_FAILED || args.handle == 0)
+	if (call_open_firmware(&args) == OF_FAILED || args.handle == 0)
 		return OF_FAILED;
 
 	return args.handle;
@@ -425,7 +455,7 @@ of_close(intptr_t handle)
 		intptr_t	handle;
 	} args = {"close", 1, 0, handle};
 
-	gCallOpenFirmware(&args);
+	call_open_firmware(&args);
 }
 
 
@@ -442,7 +472,7 @@ of_read(intptr_t handle, void *buffer, intptr_t bufferSize)
 		intptr_t	size;
 	} args = {"read", 3, 1, handle, buffer, bufferSize, 0};
 
-	if (gCallOpenFirmware(&args) == OF_FAILED)
+	if (call_open_firmware(&args) == OF_FAILED)
 		return OF_FAILED;
 
 	return args.size;
@@ -462,7 +492,7 @@ of_write(intptr_t handle, const void *buffer, intptr_t bufferSize)
 		intptr_t	size;
 	} args = {"write", 3, 1, handle, buffer, bufferSize, 0};
 
-	if (gCallOpenFirmware(&args) == OF_FAILED)
+	if (call_open_firmware(&args) == OF_FAILED)
 		return OF_FAILED;
 
 	return args.size;
@@ -486,7 +516,7 @@ of_seek(intptr_t handle, off_t pos)
 		intptr_t	status;
 	} args = {"seek", 3, 1, handle, pos_hi, pos, 0};
 
-	if (gCallOpenFirmware(&args) == OF_FAILED)
+	if (call_open_firmware(&args) == OF_FAILED)
 		return OF_FAILED;
 
 	return args.status;
@@ -505,7 +535,7 @@ of_blocks(intptr_t handle)
 		intptr_t        blocks;
 	} args = {"#blocks", 2, 1, handle, 0, 0};
 
-	if (gCallOpenFirmware(&args) == OF_FAILED)
+	if (call_open_firmware(&args) == OF_FAILED)
 		return OF_FAILED;
 	return args.blocks;
 }
@@ -523,7 +553,7 @@ of_block_size(intptr_t handle)
 		intptr_t        size;
 	} args = {"block-size", 2, 1, handle, 0, 0};
 
-	if (gCallOpenFirmware(&args) == OF_FAILED)
+	if (call_open_firmware(&args) == OF_FAILED)
 		return OF_FAILED;
 	return args.size;
 }
@@ -543,7 +573,7 @@ of_release(void *virtualAddress, intptr_t size)
 		intptr_t	size;
 	} args = {"release", 2, 0, virtualAddress, size};
 
-	return gCallOpenFirmware(&args);
+	return call_open_firmware(&args);
 }
 
 
@@ -560,7 +590,7 @@ of_claim(void *virtualAddress, intptr_t size, intptr_t align)
 		void		*address;
 	} args = {"claim", 3, 1, virtualAddress, size, align};
 
-	if (gCallOpenFirmware(&args) == OF_FAILED)
+	if (call_open_firmware(&args) == OF_FAILED)
 		return NULL;
 
 	return args.address;
@@ -584,7 +614,7 @@ of_test(const char *service)
 		intptr_t	missing;
 	} args = {"test", 1, 1, service, 0};
 
-	if (gCallOpenFirmware(&args) == OF_FAILED)
+	if (call_open_firmware(&args) == OF_FAILED)
 		return OF_FAILED;
 
 	return args.missing;
@@ -604,7 +634,7 @@ of_milliseconds(void)
 		intptr_t	milliseconds;
 	} args = {"milliseconds", 0, 1, 0};
 
-	if (gCallOpenFirmware(&args) == OF_FAILED)
+	if (call_open_firmware(&args) == OF_FAILED)
 		return OF_FAILED;
 
 	return args.milliseconds;
@@ -620,6 +650,6 @@ of_exit(void)
 		intptr_t	num_returns;
 	} args = {"exit", 0, 0};
 
-	gCallOpenFirmware(&args);
+	call_open_firmware(&args);
 }
 
