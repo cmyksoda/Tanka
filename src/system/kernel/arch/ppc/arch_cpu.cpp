@@ -68,25 +68,29 @@ arch_cpu_init_post_modules(kernel_args *args)
 void
 arch_cpu_sync_icache(void *address, size_t len)
 {
-	int l, off;
-	char *p;
+	// NOTE: len is unsigned (size_t), so it must never be used directly as
+	// a decrementing loop counter - the final subtraction can undershoot
+	// zero and wrap around to a huge positive value instead of stopping,
+	// turning this into a runaway loop that walks off the end of the
+	// intended range into unmapped memory. Use signed locals for both
+	// countdowns instead (mirrors the equivalent fix in arch_elf.cpp's
+	// sync_icache_for_relocation()).
+	int off = (unsigned int)address & (CACHELINE - 1);
+	int remaining = (int)(len + off);
 
-	off = (unsigned int)address & (CACHELINE - 1);
-	len += off;
-
-	l = len;
-	p = (char *)address - off;
+	char *p = (char *)address - off;
 	do {
 		asm volatile ("dcbst 0,%0" :: "r"(p));
 		p += CACHELINE;
-	} while ((l -= CACHELINE) > 0);
+	} while ((remaining -= CACHELINE) > 0);
 	asm volatile ("sync");
 
+	remaining = (int)(len + off);
 	p = (char *)address - off;
 	do {
 		asm volatile ("icbi 0,%0" :: "r"(p));
 		p += CACHELINE;
-	} while ((len -= CACHELINE) > 0);
+	} while ((remaining -= CACHELINE) > 0);
 	asm volatile ("sync");
 	isync();
 }
