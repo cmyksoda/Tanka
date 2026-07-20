@@ -225,7 +225,7 @@ FUNCTION_END(setl2cr)
 // void ppc_context_switch(addr_t *old_sp, addr_t new_sp);
 FUNCTION(ppc_context_switch):
 
-	// regs to push on the stack: f13-f31, r13-r31, cr, r2, lr
+	// regs to push on the stack: f13-f31, r13-r31, r3, r2, cr, lr
 
 	// push the old regs we need to save on the stack
 	// f31-13
@@ -269,6 +269,17 @@ FUNCTION(ppc_context_switch):
 	stwu		%r15, -4(%r1)
 	stwu		%r14, -4(%r1)
 	stwu		%r13, -4(%r1)
+	// r3 slot: the restore sequence below pops an r3 slot (needed so that
+	// arch_thread_init_kthread_stack()'s fabricated initial frames can pass
+	// the entry function's argument to a freshly starting thread). The save
+	// side must push a matching slot, or every frame saved here - i.e. the
+	// frame of every thread that is switched *away* from and later resumed
+	// - restores with all of r3/r13-r31 rotated by one slot and the final
+	// stack pointer off by 4 (fresh fabricated frames were fine, which is
+	// why this only ever broke the first time a previously-running thread
+	// got resumed). The value itself is dead for resumed threads (r3 is a
+	// volatile argument register), only the slot's existence matters.
+	stwu		%r3, -4(%r1)
 	stwu		%r2, -4(%r1)
 
 	// CR and LR

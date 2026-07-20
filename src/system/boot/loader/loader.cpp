@@ -192,8 +192,20 @@ load_modules(stage2_args* args, BootVolume& volume)
 	if (failed == i) {
 		// couldn't load any boot modules
 		// fall back to load all modules (currently needed by the boot floppy)
+		//
+		// NOTE: "interrupt_controllers" was missing here, which meant that
+		// whenever the primary <addon path>/boot symlink-group load failed
+		// (as it currently does on ppc - a separate, not yet root-caused
+		// packagefs-in-bootloader issue), the ppc-required openpic driver
+		// never got preloaded at all. arch_int_init_post_device_manager()
+		// (src/system/kernel/arch/ppc/arch_int.cpp) enumerates loaded
+		// modules for anything under "interrupt_controllers/" before the
+		// boot volume is even mounted, so there is no later point at which
+		// it could otherwise be picked up - it has to be preloaded here or
+		// not at all, exactly like the categories already in this list.
 		const char *paths[] = { "bus_managers", "busses/ide", "busses/scsi",
-			"generic", "partitioning_systems", "drivers/bin", NULL};
+			"generic", "partitioning_systems", "drivers/bin",
+			"interrupt_controllers", NULL};
 
 		for (int32 i = 0; paths[i]; i++) {
 			char path[B_FILE_NAME_LENGTH];
