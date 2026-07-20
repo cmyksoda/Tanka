@@ -1330,9 +1330,14 @@ insert_preloaded_image(preloaded_elf_image *preloadedImage, bool kernel)
 	preloadedImage->id = image->id;
 		// modules_init() uses this information to get the preloaded images
 
-	// we now no longer need to write to the text area anymore
+	// we now no longer need to write to the text area anymore - unless the
+	// image is a single merged read/write/execute segment (ppc kernel
+	// add-ons), in which case text and data share one area (see
+	// create_preloaded_image_areas()) and its data must remain writable.
 	set_area_protection(image->text_region.id,
-		B_KERNEL_READ_AREA | B_KERNEL_EXECUTE_AREA);
+		B_KERNEL_READ_AREA | B_KERNEL_EXECUTE_AREA
+			| (image->data_region.id == image->text_region.id
+				? B_KERNEL_WRITE_AREA : 0));
 
 	return B_OK;
 

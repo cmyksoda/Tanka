@@ -145,6 +145,20 @@ create_preloaded_image_areas(struct preloaded_image* _image)
 		// this will later be remapped read-only/executable by the
 		// ELF initialization code
 
+	// A ppc kernel add-on linked as a single merged read/write/execute
+	// PT_LOAD segment has its data region mirrored onto its text region by
+	// the boot loader's ELF loader (they share one start address). In that
+	// case text and data are one and the same area - creating a second,
+	// B_EXACT_ADDRESS area over the identical range would collide
+	// (B_BAD_VALUE) and, since it is B_ALREADY_WIRED, trip
+	// ASSERT(wiring != B_ALREADY_WIRED) in map_backing_store(). Share the
+	// text area instead. (The area is left read/write so the merged
+	// segment's data stays writable - see insert_preloaded_image().)
+	if (image->data_region.start == image->text_region.start) {
+		image->data_region.id = image->text_region.id;
+		return;
+	}
+
 	strcpy(name + length, "_data");
 	address = (void*)ROUNDDOWN(image->data_region.start, B_PAGE_SIZE);
 	image->data_region.id = create_area(name, &address, B_EXACT_ADDRESS,
