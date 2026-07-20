@@ -117,6 +117,34 @@ static spinlock sVSIDBaseBitmapLock;
 #define VADDR_TO_VSID(vsidBase, vaddr) (vsidBase + ((vaddr) >> 28))
 
 
+/*!	Returns the virtual segment ID (VSID) the hardware actually uses for
+	\a virtualAddress in this translation map.
+
+	The VADDR_TO_VSID(fVSIDBase, ...) formula assumes VSID == fVSIDBase +
+	segment index, i.e. that VSIDs are linear in the segment number. That
+	holds for user address spaces (ChangeASID() programs segment registers
+	0-7 to exactly fVSIDBase + i), but NOT for the kernel: the boot loader
+	preserves whatever arbitrary, non-linear VSIDs Open Firmware assigned to
+	each segment (see the loader's mmu.cpp), and every kernel PTE is tagged
+	with those real values - both the loader's own and MapEarly()'s, which
+	read the live segment register (get_sr()). Using the linear formula for a
+	kernel address therefore computes a VSID the hardware never uses, so the
+	hash lookup misses (LookupPageTableEntry() returns NULL, Query() reports
+	physical 0) and any PTE written via Map() is tagged so the CPU's own MMU
+	can never find it. Kernel segment registers (8-15) are fixed and always
+	loaded regardless of the current team, so reading the real VSID directly
+	is always safe here; only kernel addresses need this - user addresses
+	keep the self-consistent formula.
+*/
+static inline uint32
+vsid_for_address(uint32 vsidBase, addr_t virtualAddress)
+{
+	if (IS_KERNEL_ADDRESS(virtualAddress))
+		return get_sr((void*)virtualAddress) & 0xffffff;
+	return VADDR_TO_VSID(vsidBase, virtualAddress);
+}
+
+
 // #pragma mark -
 
 
@@ -309,7 +337,7 @@ page_table_entry *
 PPCVMTranslationMapClassic::LookupPageTableEntry(addr_t virtualAddress)
 {
 	// lookup the vsid based off the va
-	uint32 virtualSegmentID = VADDR_TO_VSID(fVSIDBase, virtualAddress);
+	uint32 virtualSegmentID = vsid_for_address(fVSIDBase, virtualAddress);
 
 //	dprintf("vm_translation_map.lookup_page_table_entry: vsid %ld, va 0x%lx\n", virtualSegmentID, virtualAddress);
 
@@ -380,7 +408,7 @@ PPCVMTranslationMapClassic::Map(addr_t virtualAddress,
 	TRACE("map_tmap: entry pa 0x%lx va 0x%lx\n", pa, va);
 
 	// lookup the vsid based off the va
-	uint32 virtualSegmentID = VADDR_TO_VSID(fVSIDBase, virtualAddress);
+	uint32 virtualSegmentID = vsid_for_address(fVSIDBase, virtualAddress);
 	uint32 protection = 0;
 
 	// ToDo: check this
