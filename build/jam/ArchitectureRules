@@ -412,6 +412,15 @@ rule KernelArchitectureSetup architecture
 			HAIKU_KERNEL_PIC_CCFLAGS = -fPIE ;
 			HAIKU_KERNEL_PIC_LINKFLAGS = -shared -fPIE ;
 
+			# Link kernel add-ons with an explicit linker script (analogous to
+			# kernel.ld) so they get two distinct text/data PT_LOAD segments
+			# and a reserved PLT trampoline pool - see kernel_addon.ld. Without
+			# it, modern binutils emits a single merged RWE segment and no
+			# trampoline pool, breaking add-on loading and out-of-range
+			# JMP_SLOT relocations.
+			HAIKU_KERNEL_ADDON_LINKFLAGS +=
+				-Wl,--script=$(HAIKU_TOP)/src/system/ldscripts/ppc/kernel_addon.ld ;
+
 		case riscv64 :
 			# Kernel lives within any single 2 GiB address space.
 			# Default is medlow (-2GiB / +2GiB)
