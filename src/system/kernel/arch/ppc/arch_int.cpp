@@ -245,22 +245,29 @@ dprintf("handling I/O interrupts done\n");
 			panic("unhandled exception type\n");
 	}
 
-	cpu_status state = disable_interrupts();
-	if (thread->post_interrupt_callback != NULL) {
-		void (*callback)(void*) = thread->post_interrupt_callback;
-		void* data = thread->post_interrupt_data;
+	// thread is NULL for exceptions taken before thread_init() has run
+	// (early boot startup, e.g. commpage_init() enabling a first
+	// decrementer tick) - handled explicitly below just like the
+	// gBootFrameStack case above; there is no post-interrupt callback or
+	// scheduler to invoke yet, only an iframe to pop.
+	if (thread != NULL) {
+		cpu_status state = disable_interrupts();
+		if (thread->post_interrupt_callback != NULL) {
+			void (*callback)(void*) = thread->post_interrupt_callback;
+			void* data = thread->post_interrupt_data;
 
-		thread->post_interrupt_callback = NULL;
-		thread->post_interrupt_data = NULL;
+			thread->post_interrupt_callback = NULL;
+			thread->post_interrupt_data = NULL;
 
-		restore_interrupts(state);
+			restore_interrupts(state);
 
-		callback(data);
-	} else if (thread->cpu->invoke_scheduler) {
-		SpinLocker schedulerLocker(thread->scheduler_lock);
-		scheduler_reschedule(B_THREAD_READY);
-		schedulerLocker.Unlock();
-		restore_interrupts(state);
+			callback(data);
+		} else if (thread->cpu->invoke_scheduler) {
+			SpinLocker schedulerLocker(thread->scheduler_lock);
+			scheduler_reschedule(B_THREAD_READY);
+			schedulerLocker.Unlock();
+			restore_interrupts(state);
+		}
 	}
 
 	// pop iframe
@@ -283,32 +290,84 @@ arch_int_init_post_vm(kernel_args *args)
 {
 	void *handlers = (void *)args->arch_args.exception_handlers.start;
 
-	// We may need to remap the exception handler area into the kernel address
-	// space.
-	if (!IS_KERNEL_ADDRESS(handlers)) {
-		addr_t address = (addr_t)handlers;
-		status_t error = ppc_remap_address_range(&address,
-			args->arch_args.exception_handlers.size, true);
-		if (error != B_OK) {
-			panic("arch_int_init_post_vm(): Failed to remap the exception "
-				"handler area!");
-			return error;
-		}
-		handlers = (void*)(address);
-	}
+	// The actual size of our own exception vector code, not whatever the
+	// boot loader happened to record in kernel_args - see below, that value
+	// has no reliable relationship to this in either of its code paths.
+	// PPC hardware vectors exceptions to fixed offsets within the first two
+	// physical pages (see the design comment atop arch_exceptions.S); the
+	// generated __irqvec_start..__irqvec_end code is a bit under 6 KB,
+	// i.e. genuinely needs both of those pages, not the one page a
+	// same-sized-as-B_PAGE_SIZE assumption would provide.
+	size_t handlersSize = ROUNDUP((addr_t)&__irqvec_end
+		- (addr_t)&__irqvec_start, B_PAGE_SIZE);
 
-	// create a region to map the irq vector code into (physical address 0x0)
-	area_id exceptionArea = create_area("exception_handlers",
-		&handlers, B_EXACT_ADDRESS, args->arch_args.exception_handlers.size,
-		B_ALREADY_WIRED, B_KERNEL_READ_AREA | B_KERNEL_WRITE_AREA);
+	area_id exceptionArea;
+	if (handlers == (void*)-1) {
+		// The boot loader never found an existing Open Firmware mapping to
+		// preserve for this (its own long-standing, acknowledged TODO - see
+		// find_allocated_ranges() in the loader's mmu.cpp, which leaves this
+		// exact sentinel value in place when its "physical_address <= 0x100"
+		// heuristic for locating OF's exception vectors doesn't match -
+		// true on at least QEMU/OpenBIOS, where OF's own vectors are high
+		// up in physical memory instead). (void*)-1 also happens to satisfy
+		// IS_KERNEL_ADDRESS() on ppc32 (>= KERNEL_BASE), so the remap logic
+		// below would otherwise skip straight to requesting a B_EXACT_ADDRESS
+		// B_ALREADY_WIRED area at literal address 0xffffffff - not an
+		// address any real translation is ever going to occupy, and not
+		// what B_ALREADY_WIRED (which asserts the mapping already exists)
+		// is for in the first place. There is nothing to preserve here, so
+		// allocate somewhere fresh instead - but *not* just anywhere: the
+		// PPC CPU's hardware exception mechanism jumps to fixed *physical*
+		// addresses at the bottom of memory regardless of where our code
+		// for handling them virtually lives, so the physical location is
+		// not a free choice here the way it is for ordinary kernel
+		// allocations. B_CONTIGUOUS with a [0, 2 pages) physical
+		// restriction forces exactly that placement; B_ANY_KERNEL_ADDRESS
+		// alone (originally tried here) picked arbitrary physical memory
+		// that real hardware exceptions could never actually reach,
+		// producing a silent, unresponsive hang on the first one taken
+		// after boot (no panic - the CPU vectors into whatever was already
+		// sitting at physical address 0, not into our copied handler code)
+		// rather than the crash a wrong *virtual* address would give.
+		handlers = NULL;
+		physical_address_restrictions physicalRestrictions = {};
+		physicalRestrictions.low_address = 0;
+		physicalRestrictions.high_address = handlersSize;
+		virtual_address_restrictions virtualRestrictions = {};
+		virtualRestrictions.address_specification = B_ANY_KERNEL_ADDRESS;
+		exceptionArea = vm_create_anonymous_area(VMAddressSpace::KernelID(),
+			"exception_handlers", handlersSize, B_CONTIGUOUS,
+			B_KERNEL_READ_AREA | B_KERNEL_WRITE_AREA, 0, 0,
+			&virtualRestrictions, &physicalRestrictions, true, &handlers);
+	} else {
+		// We may need to remap the exception handler area into the kernel
+		// address space.
+		if (!IS_KERNEL_ADDRESS(handlers)) {
+			addr_t address = (addr_t)handlers;
+			status_t error = ppc_remap_address_range(&address, handlersSize,
+				true);
+			if (error != B_OK) {
+				panic("arch_int_init_post_vm(): Failed to remap the "
+					"exception handler area!");
+				return error;
+			}
+			handlers = (void*)(address);
+		}
+
+		// create a region to map the irq vector code into (physical
+		// address 0x0)
+		exceptionArea = create_area("exception_handlers", &handlers,
+			B_EXACT_ADDRESS, handlersSize, B_ALREADY_WIRED,
+			B_KERNEL_READ_AREA | B_KERNEL_WRITE_AREA);
+	}
 	if (exceptionArea < B_OK)
 		panic("arch_int_init2: could not create exception handler region\n");
 
 	dprintf("exception handlers at %p\n", handlers);
 
 	// copy the handlers into this area
-	memcpy(handlers, &__irqvec_start, args->arch_args.exception_handlers.size);
-	arch_cpu_sync_icache(handlers, args->arch_args.exception_handlers.size);
+	memcpy(handlers, &__irqvec_start, handlersSize);
+	arch_cpu_sync_icache(handlers, handlersSize);
 
 	// init the CPU exception contexts
 	int cpuCount = smp_get_num_cpus();

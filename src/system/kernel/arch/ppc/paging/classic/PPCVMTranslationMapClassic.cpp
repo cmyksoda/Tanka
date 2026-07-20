@@ -182,12 +182,38 @@ PPCVMTranslationMapClassic::Init(bool kernel)
 	// allocate a VSID base for this one
 	if (kernel) {
 		// The boot loader has set up the segment registers for identical
-		// mapping. Two VSID bases are reserved for the kernel: 0 and 8. The
-		// latter one for mapping the kernel address space (0x80000000...), the
-		// former one for the lower addresses required by the Open Firmware
-		// services.
-		fVSIDBase = 0;
-		sVSIDBaseBitmap[0] |= 0x3;
+		// mapping, preserving whatever VSID Open Firmware actually had
+		// active per segment (necessarily so - it's an arbitrary,
+		// firmware-assigned value with no fixed relationship to the segment
+		// index; see the loader's own mmu.cpp for the original fix this
+		// mirrors). This used to be assumed to always be 0 - i.e. VSID ==
+		// segment index - which held on whatever firmware this code was
+		// last verified against, but does not hold in general: confirmed
+		// directly on QEMU/OpenBIOS, where the real VSID for segment 0 is
+		// 1024, not 0. A hardcoded fVSIDBase caused every kernel-space
+		// Map()/Query() to tag entries with a VSID the hardware's segment
+		// registers don't actually have active, making the software-side
+		// hash table lookups self-consistent but functionally disconnected
+		// from what the CPU's own MMU resolves for a real memory access -
+		// most visibly, a translation map remap (used to relocate the page
+		// table itself out of low memory during vm_translation_map_init_
+		// post_area()) would successfully write a "new" mapping that real
+		// hardware translation could never actually reach, silently
+		// resolving reads through it to whatever unrelated, pre-existing
+		// mapping happened to already cover that virtual range instead.
+		// Query the real, current value instead of assuming it.
+		fVSIDBase = get_sr((void*)0) & 0xffffff;
+
+		// Two VSID bases are reserved for the kernel, spanning it: the
+		// kernel's fVSIDBase covers all 16 segments (this translation map
+		// is used for both the low addresses required by Open Firmware
+		// services and the kernel address space at 0x80000000+), which in
+		// the 8-segments-per-base allocation scheme below spans exactly two
+		// base slots.
+		uint32 kernelBaseBit = fVSIDBase >> VSID_BASE_SHIFT;
+		sVSIDBaseBitmap[kernelBaseBit / 32] |= 1 << (kernelBaseBit % 32);
+		sVSIDBaseBitmap[(kernelBaseBit + 1) / 32]
+			|= 1 << ((kernelBaseBit + 1) % 32);
 	} else {
 		int i = 0;
 
