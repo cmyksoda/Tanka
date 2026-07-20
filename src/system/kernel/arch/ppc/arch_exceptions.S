@@ -90,7 +90,50 @@ FUNCTION(name):							\
 __irqvec_start:
 	.long	0
 
-/* Called by the exception vector code.
+/* NOTE: exception_vector_common used to live here, in the 0x4-0x100 space
+   before the first hardware vector. It has been moved to just AFTER the
+   vector table (see below), because Open Firmware uses this low physical
+   memory (0x0-0x100) as its own register-save scratch area during every
+   client-interface call - and on this platform the kernel debug console
+   writes through OF, so every dprintf() is such a call. With the shared
+   prologue placed here, each OF call silently overwrote it (confirmed:
+   physical 0x0 took on OF's live SPRG0 value, 0x4 became a stray kernel
+   pointer), and the next exception taken executed the corrupted code,
+   producing the long-standing self-corrupting-vector / PC=0x1c fault loop.
+   The per-vector "bl exception_vector_common" stubs reach it equally well
+   from its new location (a forward branch, well within 24-bit range). */
+
+DEFINE_VECTOR(0x100, system_reset_exception)
+DEFINE_VECTOR(0x200, machine_check_exception)
+DEFINE_VECTOR(0x300, DSI_exception)
+DEFINE_VECTOR(0x400, ISI_exception)
+DEFINE_VECTOR(0x500, external_interrupt_exception)
+DEFINE_VECTOR(0x600, alignment_exception)
+DEFINE_VECTOR(0x700, program_exception)
+DEFINE_VECTOR(0x800, FP_unavailable_exception)
+DEFINE_VECTOR(0x900, decrementer_exception)
+DEFINE_VECTOR(0xc00, system_call_exception)
+DEFINE_VECTOR(0xd00, trace_exception)
+DEFINE_VECTOR(0xe00, FP_assist_exception)
+DEFINE_VECTOR(0xf00, perf_monitor_exception)
+DEFINE_VECTOR(0xf20, altivec_unavailable_exception)
+DEFINE_VECTOR(0x1000, ITLB_miss_exception)
+DEFINE_VECTOR(0x1100, DTLB_miss_on_load_exception)
+DEFINE_VECTOR(0x1200, DTLB_miss_on_store_exception)
+DEFINE_VECTOR(0x1300, instruction_address_breakpoint_exception)
+DEFINE_VECTOR(0x1400, system_management_exception)
+DEFINE_VECTOR(0x1600, altivec_assist_exception)
+DEFINE_VECTOR(0x1700, thermal_management_exception)
+
+
+/* Called by the exception vector code. Deliberately placed here, AFTER the
+ * vector table, rather than in the 0x0-0x100 space before it: Open Firmware
+ * scribbles on that low physical memory during client calls (see the note
+ * up above the vector table). Everything from 0x1714 onward is past both the
+ * hardware vectors and OF's low-memory scratch, so it stays intact across OF
+ * calls. Still copied as part of the __irqvec_start..__irqvec_end blob into
+ * the first two physical pages, and still reached by each vector's
+ * "bl exception_vector_common".
  * LR:    Points to the end of the exception vector code we're coming from.
  * r0:    original LR
  * r1:    ppc_cpu_exception_context* (physical address)
@@ -133,28 +176,6 @@ exception_vector_common:
 	mtlr	%r2
 	blr
 
-
-DEFINE_VECTOR(0x100, system_reset_exception)
-DEFINE_VECTOR(0x200, machine_check_exception)
-DEFINE_VECTOR(0x300, DSI_exception)
-DEFINE_VECTOR(0x400, ISI_exception)
-DEFINE_VECTOR(0x500, external_interrupt_exception)
-DEFINE_VECTOR(0x600, alignment_exception)
-DEFINE_VECTOR(0x700, program_exception)
-DEFINE_VECTOR(0x800, FP_unavailable_exception)
-DEFINE_VECTOR(0x900, decrementer_exception)
-DEFINE_VECTOR(0xc00, system_call_exception)
-DEFINE_VECTOR(0xd00, trace_exception)
-DEFINE_VECTOR(0xe00, FP_assist_exception)
-DEFINE_VECTOR(0xf00, perf_monitor_exception)
-DEFINE_VECTOR(0xf20, altivec_unavailable_exception)
-DEFINE_VECTOR(0x1000, ITLB_miss_exception)
-DEFINE_VECTOR(0x1100, DTLB_miss_on_load_exception)
-DEFINE_VECTOR(0x1200, DTLB_miss_on_store_exception)
-DEFINE_VECTOR(0x1300, instruction_address_breakpoint_exception)
-DEFINE_VECTOR(0x1400, system_management_exception)
-DEFINE_VECTOR(0x1600, altivec_assist_exception)
-DEFINE_VECTOR(0x1700, thermal_management_exception)
 
 .global __irqvec_end
 __irqvec_end:
