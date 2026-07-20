@@ -286,9 +286,27 @@ ELFLoader<Class>::Load(int fd, preloaded_image* _image)
 	}
 
 
-	// found both, text and data?
+	// Normally there are two PT_LOAD segments: a read-only executable text
+	// segment and a writable data segment (which, on ppc, is itself RWE).
+	// Modern binutils, however, emits a SINGLE merged read/write/execute
+	// segment for -shared ppc kernel add-ons (the kernel itself avoids this
+	// via kernel.ld's explicit PHDRS block; add-ons have no such script).
+	// That lone segment is writable, so the loop above placed it in
+	// data_region and left text_region empty. Mirror it into the empty
+	// region so the two-region machinery below - region allocation, delta
+	// computation (relocations are all keyed off text_region.delta), and
+	// per-segment loading - operates correctly on the single contiguous
+	// segment with one shared delta. NOTE: do not instead reorder the
+	// executable-vs-writable classification above - the kernel's real data
+	// segment is RWE too and must stay classified as data.
+	if (image->text_region.size == 0 && image->data_region.size != 0)
+		image->text_region = image->data_region;
+	else if (image->data_region.size == 0 && image->text_region.size != 0)
+		image->data_region = image->text_region;
+
+	// found a loadable segment?
 	if (image->data_region.size == 0 || image->text_region.size == 0) {
-		dprintf("Couldn't find both text and data segment!\n");
+		dprintf("Couldn't find a loadable segment!\n");
 		status = B_BAD_DATA;
 		goto error1;
 	}
