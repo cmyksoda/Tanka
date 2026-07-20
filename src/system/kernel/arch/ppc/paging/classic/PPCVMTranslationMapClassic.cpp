@@ -561,19 +561,43 @@ PPCVMTranslationMapClassic::RemapAddressRange(addr_t *_virtualAddress,
 	void *newAddress = NULL;
 	status_t error = vm_reserve_address_range(addressSpace->ID(), &newAddress,
 		B_ANY_KERNEL_ADDRESS, size, B_KERNEL_READ_AREA | B_KERNEL_WRITE_AREA);
-	if (error != B_OK)
+	if (error != B_OK) {
+		dprintf("RemapAddressRange: vm_reserve_address_range(size %" B_PRIuSIZE
+			") failed: %#" B_PRIx32 "\n", size, (uint32)error);
 		return error;
+	}
 
-	// get the area's first physical page
+	// Get the area's first physical page. This is expected to fail for the
+	// low-memory ranges Open Firmware handed the loader (the page table
+	// itself among them) - the loader preserves whatever VSID scheme OF
+	// actually has active per segment (necessarily so; it's arbitrary,
+	// firmware-assigned, and not knowable in advance), but that per-segment
+	// VSID is never passed on to the kernel, so LookupPageTableEntry()'s
+	// hardcoded VADDR_TO_VSID(fVSIDBase, ...) formula can't find entries
+	// tagged with it. Every such preserved OF range observed in practice is
+	// identity-mapped (virtual == physical) by construction - the loader
+	// only ever preserves OF's own existing translations verbatim, it
+	// doesn't relocate them - so fall back to that instead of failing
+	// outright.
 	page_table_entry *entry = LookupPageTableEntry(virtualAddress);
-	if (!entry)
-		return B_ERROR;
-	phys_addr_t physicalBase = (phys_addr_t)entry->physical_page_number << 12;
+	phys_addr_t physicalBase;
+	if (entry != NULL) {
+		physicalBase = (phys_addr_t)entry->physical_page_number << 12;
+	} else {
+		dprintf("RemapAddressRange: LookupPageTableEntry(%p) found nothing, "
+			"assuming an identity-mapped OF-preserved range\n",
+			(void*)virtualAddress);
+		physicalBase = (phys_addr_t)virtualAddress;
+	}
 
 	// map the pages
 	error = ppc_map_address_range((addr_t)newAddress, physicalBase, size);
-	if (error != B_OK)
+	if (error != B_OK) {
+		dprintf("RemapAddressRange: ppc_map_address_range(%p, %p, %"
+			B_PRIuSIZE ") failed: %#" B_PRIx32 "\n", newAddress,
+			(void*)physicalBase, size, (uint32)error);
 		return error;
+	}
 
 	*_virtualAddress = (addr_t)newAddress;
 

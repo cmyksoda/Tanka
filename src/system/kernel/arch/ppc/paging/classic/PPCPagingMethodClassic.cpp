@@ -161,7 +161,9 @@ PPCPagingMethodClassic::InitPostArea(kernel_args* args)
 			false);
 		if (error != B_OK) {
 			panic("arch_vm_translation_map_init_post_area(): Failed to remap "
-				"the page table!");
+				"the page table! fPageTable = %p, fPageTableSize = %"
+				B_PRIuSIZE ", error = %#" B_PRIx32, fPageTable,
+				fPageTableSize, (uint32)error);
 			return error;
 		}
 
