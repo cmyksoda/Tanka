@@ -384,10 +384,18 @@ Stream::ReadAt(off_t pos, uint8* buffer, size_t* _length)
 			partial = true;
 		}
 
-		if (read_pos(fVolume.Device(), fVolume.ToOffset(run), buffer + bytesRead,
-				run.Length() << fVolume.BlockShift()) < B_OK) {
-			*_length = bytesRead;
-			return B_BAD_VALUE;
+		{
+			// A short (but non-negative) read used to be treated the same
+			// as full success here, silently handing back a buffer with
+			// unread trailing bytes - read_pos() only reports an error via
+			// a negative return, never via returning less than requested.
+			ssize_t want = run.Length() << fVolume.BlockShift();
+			ssize_t got = read_pos(fVolume.Device(), fVolume.ToOffset(run),
+				buffer + bytesRead, want);
+			if (got < want) {
+				*_length = bytesRead;
+				return B_BAD_VALUE;
+			}
 		}
 
 		int32 bytes = run.Length() << blockShift;

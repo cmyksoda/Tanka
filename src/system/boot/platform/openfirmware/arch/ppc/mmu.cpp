@@ -11,6 +11,8 @@
 
 #include <OS.h>
 
+#include <string.h>
+
 #include <platform_arch.h>
 #include <boot/addr_range.h>
 #include <boot/kernel_args.h>
@@ -231,11 +233,96 @@ fill_page_table_entry(page_table_entry *entry, uint32 virtualSegmentID,
 }
 
 
+/*!	Looks up the valid page table entry mapping \a virtualAddress under
+	\a virtualSegmentID, searching both the primary and the secondary hash
+	group. Returns NULL if the address is not currently mapped.
+*/
+static page_table_entry *
+lookup_page_table_entry(uint32 virtualSegmentID, void *virtualAddress)
+{
+	uint32 hash = page_table_entry::PrimaryHash(virtualSegmentID,
+		(uint32)virtualAddress);
+	uint32 api = ((uint32)virtualAddress >> 22) & 0x3f;
+
+	page_table_entry_group *group = &sPageTable[hash & sPageTableHashMask];
+	for (int32 i = 0; i < 8; i++) {
+		page_table_entry &entry = group->entry[i];
+		if (entry.valid && !entry.secondary_hash
+			&& entry.virtual_segment_id == virtualSegmentID
+			&& entry.abbr_page_index == api)
+			return &entry;
+	}
+
+	group = &sPageTable[page_table_entry::SecondaryHash(hash)
+		& sPageTableHashMask];
+	for (int32 i = 0; i < 8; i++) {
+		page_table_entry &entry = group->entry[i];
+		if (entry.valid && entry.secondary_hash
+			&& entry.virtual_segment_id == virtualSegmentID
+			&& entry.abbr_page_index == api)
+			return &entry;
+	}
+
+	return NULL;
+}
+
+
+/*!	Checks whether any page in the given virtual range already has a valid
+	page table entry. If so, returns true and sets \a _firstMappedPage to
+	the first such page. The firmware faults device mappings into the (now
+	shared) page table lazily, so ranges that look free in
+	virtual_allocated_range may still contain live firmware mappings.
+*/
+static bool
+is_virtual_range_mapped_in_page_table(void *virtualAddress, size_t size,
+	void **_firstMappedPage)
+{
+	addr_t base = ROUNDDOWN((addr_t)virtualAddress, B_PAGE_SIZE);
+	for (addr_t va = base; va < (addr_t)virtualAddress + size;
+			va += B_PAGE_SIZE) {
+		uint32 virtualSegmentID = sSegments[va >> 28].virtual_segment_id;
+		if (lookup_page_table_entry(virtualSegmentID, (void *)va) != NULL) {
+			*_firstMappedPage = (void *)va;
+			return true;
+		}
+	}
+	return false;
+}
+
+
 static void
 map_page(void *virtualAddress, void *physicalAddress, uint8 mode)
 {
 	uint32 virtualSegmentID
 		= sSegments[addr_t(virtualAddress) >> 28].virtual_segment_id;
+
+	// If a valid PTE for this exact VA already exists, replace it in place.
+	// Inserting a second valid PTE for the same VA instead makes it ambiguous
+	// which entry the MMU uses - observed on QEMU/OpenBIOS, where preserved
+	// identity mappings of the mac-io device space at 0x80000000 shadowed
+	// freshly mapped kernel pages, silently redirecting kernel image data
+	// into device memory.
+	page_table_entry *existing = lookup_page_table_entry(virtualSegmentID,
+		virtualAddress);
+	if (existing != NULL) {
+		if (existing->physical_page_number
+				!= (uint32)physicalAddress / B_PAGE_SIZE) {
+			dprintf("map_page: replacing existing mapping for va %p "
+				"(-> pa 0x%x) with pa %p\n", virtualAddress,
+				(unsigned int)(existing->physical_page_number * B_PAGE_SIZE),
+				physicalAddress);
+		}
+		bool secondaryHash = existing->secondary_hash;
+		existing->valid = false;
+		ppc_sync();
+		asm volatile("tlbie %0" : : "r" (virtualAddress));
+		eieio();
+		tlbsync();
+		ppc_sync();
+		fill_page_table_entry(existing, virtualSegmentID, virtualAddress,
+			physicalAddress, mode, secondaryHash);
+		return;
+	}
 
 	uint32 hash = page_table_entry::PrimaryHash(virtualSegmentID,
 		(uint32)virtualAddress);
@@ -268,6 +355,65 @@ map_page(void *virtualAddress, void *physicalAddress, uint8 mode)
 	}
 
 	panic("%s: out of page table entries!\n", __func__);
+}
+
+
+/*!	Reserves the CPU-visible memory ranges of all PCI devices (their
+	assigned BARs) as allocated virtual address space.
+
+	The firmware accesses its devices through identity mappings it faults
+	into the page table lazily, at any time. Any kernel/loader allocation
+	overlapping such a range would shadow the device once mapped, silently
+	redirecting firmware device accesses into RAM (or vice versa). On
+	QEMU/OpenBIOS the PCI BARs (mac-io at 0x80000000, OpenPIC at 0x80040000,
+	VRAM at 0x81000000, ...) sit exactly at KERNEL_BASE, so this is not a
+	theoretical concern.
+*/
+static void
+reserve_pci_device_ranges()
+{
+	intptr_t root = of_peer(0);
+	if (root == OF_FAILED || root == 0)
+		return;
+
+	for (intptr_t bridge = of_child(root);
+			bridge != 0 && bridge != OF_FAILED; bridge = of_peer(bridge)) {
+		char type[16];
+		memset(type, 0, sizeof(type));
+		int typeLength = of_getprop(bridge, "device_type", type,
+			sizeof(type) - 1);
+		if (typeLength <= 0 || strcmp(type, "pci") != 0)
+			continue;
+
+		for (intptr_t device = of_child(bridge);
+				device != 0 && device != OF_FAILED;
+				device = of_peer(device)) {
+			uint32 assigned[60];
+			int length = of_getprop(device, "assigned-addresses", assigned,
+				sizeof(assigned));
+			if (length <= 0)
+				continue;
+
+			int count = length / sizeof(uint32);
+			for (int i = 0; i + 5 <= count; i += 5) {
+				// Each entry: phys-hi, phys-mid, phys-lo, size-hi, size-lo.
+				// Only reserve memory space BARs (ss bits 0b10/0b11 in
+				// phys-hi); I/O space lives behind a separate window.
+				if (((assigned[i] >> 24) & 3) < 2)
+					continue;
+				uint32 base = assigned[i + 2];
+				uint32 size = assigned[i + 4];
+				if (base == 0 || size == 0)
+					continue;
+
+				addr_t start = ROUNDDOWN(base, B_PAGE_SIZE);
+				addr_t end = ROUNDUP((addr_t)base + size, B_PAGE_SIZE);
+				dprintf("reserving PCI device range %p - %p\n", (void *)start,
+					(void *)end);
+				insert_virtual_allocated_range(start, end - start);
+			}
+		}
+	}
 }
 
 
@@ -529,10 +675,34 @@ arch_mmu_allocate(void *_virtualAddress, size_t size, uint8 _protection,
 	if (!virtualAddress)
 		virtualAddress = (void*)(KERNEL_BASE + 0x10000000);
 
-	// find free address large enough to hold "size"
-	virtualAddress = find_free_virtual_range(virtualAddress, size);
-	if (virtualAddress == NULL)
-		return NULL;
+	// Find a free address large enough to hold "size". A range that looks
+	// free in virtual_allocated_range may still contain mappings the
+	// firmware faulted into the page table lazily (on QEMU/OpenBIOS the
+	// mac-io device apertures sit at 0x80000000, exactly at KERNEL_BASE),
+	// so also steer clear of anything with live page table entries.
+	for (int32 attempts = 0; ; attempts++) {
+		if (attempts >= 1024) {
+			dprintf("arch_mmu_allocate(): no virtual range free of existing "
+				"mappings found (base: %p, size: %" B_PRIuSIZE ")\n",
+				_virtualAddress, size);
+			return NULL;
+		}
+
+		virtualAddress = find_free_virtual_range(virtualAddress, size);
+		if (virtualAddress == NULL)
+			return NULL;
+
+		void *firstMappedPage;
+		if (!is_virtual_range_mapped_in_page_table(virtualAddress, size,
+				&firstMappedPage)) {
+			break;
+		}
+
+		dprintf("arch_mmu_allocate(): range %p - %p overlaps existing "
+			"mapping at %p, retrying beyond it\n", virtualAddress,
+			(void *)((addr_t)virtualAddress + size), firstMappedPage);
+		virtualAddress = (void *)((addr_t)firstMappedPage + B_PAGE_SIZE);
+	}
 
 	// fail if the exact address was requested, but is not free
 	if (exactAddress && _virtualAddress && virtualAddress != _virtualAddress) {
@@ -878,6 +1048,10 @@ arch_mmu_init(void)
 		dprintf("Error: find_allocated_ranges() failed\n");
 		return B_ERROR;
 	}
+
+	// Keep allocations away from the firmware's device apertures - it maps
+	// them lazily, so they don't all show up in the translations above.
+	reserve_pci_device_ranges();
 
 #if 0
 	block_address_translation bats[8];
