@@ -786,6 +786,29 @@ PPCVMTranslationMapClassic::UnmapPage(VMArea* area, addr_t address,
 
 
 void
+PPCVMTranslationMapClassic::UnmapArea(VMArea* area, bool deletingAddressSpace,
+	bool ignoreTopCachePageFlags)
+{
+	// The generic implementation leaves the top cache's page-table entries in
+	// place when the whole address space is going away, relying on the arch
+	// translation map's destructor to reclaim them wholesale - the way the x86
+	// pmap simply frees its page directory. The classic ppc page table is a
+	// single global hash shared by every address space and tagged only by
+	// VSID, so entries left behind for a retired (and later recycled) VSID
+	// base would silently alias into a different team, and our destructor has
+	// no cheap page-directory to free that would drop them. Rather than walk
+	// the entire hash at teardown, force the honest per-page unmap here by
+	// clearing ignoreTopCachePageFlags: every entry is then removed (with a
+	// correct tlbie for its real effective address) and fMapCount is driven
+	// to zero, so the map is genuinely empty by the time it is destroyed.
+	// This is always safe because Map() never evicts - it panics on a full
+	// PTEG rather than dropping an entry - so every live mapping is guaranteed
+	// to have a findable page-table entry here (no spurious B_ENTRY_NOT_FOUND).
+	VMTranslationMap::UnmapArea(area, deletingAddressSpace, false);
+}
+
+
+void
 PPCVMTranslationMapClassic::UnmapPages(VMArea* area, addr_t base, size_t size,
 	bool updatePageQueue, bool deletingAddressSpace)
 {
