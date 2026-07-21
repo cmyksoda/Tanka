@@ -218,15 +218,18 @@ heathrow_init_driver(device_node *node, void **cookie)
 
 	info->node = node;
 
-	// get the interface to the parent PCI device
-	void *aCookie;
+	// get the interface to the parent PCI device. get_driver() hands back the
+	// parent node's driver cookie directly - for a PCI device node that cookie
+	// is the pci_device we need. (An earlier version called the PCI module's
+	// init_driver() again on our own node, which has no PCI address attributes,
+	// and left info->device uninitialized -> a fault dereferencing 0xcccccccc.)
+	void *pciCookie;
 	status_t status = sDeviceManager->get_driver(
 		sDeviceManager->get_parent_node(node),
-		(driver_module_info**)&info->pci, &aCookie);
+		(driver_module_info**)&info->pci, &pciCookie);
 	if (status != B_OK)
 		return status;
-
-	info->pci->info.init_driver(node, (void**)&info->device);
+	info->device = (pci_device*)pciCookie;
 
 	pci_info pciInfo;
 	info->pci->get_pci_info(info->device, &pciInfo);
