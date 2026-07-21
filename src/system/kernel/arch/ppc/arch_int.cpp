@@ -422,6 +422,11 @@ struct PICModuleList : DoublyLinkedList<PICModule> {
 };
 
 
+// get_next_child_node() filters children through device_node::CompareTo(),
+// which treats a NULL attribute list as "match nothing" (returns -1). Pass an
+// empty (NULL-terminated) attribute list instead so every child matches.
+static const device_attr kMatchAnyChild[] = { {} };
+
 class DeviceTreeIterator {
 public:
 	DeviceTreeIterator(device_manager_info *deviceManager)
@@ -459,7 +464,7 @@ public:
 
 		// get first child
 		device_node *child = NULL;
-		if (fDeviceManager->get_next_child_node(fNode, NULL, &child)
+		if (fDeviceManager->get_next_child_node(fNode, kMatchAnyChild, &child)
 				== B_OK) {
 			// move to the child node
 			if (fParent != NULL)
@@ -470,7 +475,7 @@ public:
 		// no more children; backtrack to find the next sibling
 		} else {
 			while (fParent != NULL) {
-				if (fDeviceManager->get_next_child_node(fParent, NULL, &fNode)
+				if (fDeviceManager->get_next_child_node(fParent, kMatchAnyChild, &fNode)
 						== B_OK) {
 						// get_next_child_node() always puts the node
 					break;

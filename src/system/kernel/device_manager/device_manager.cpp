@@ -627,18 +627,15 @@ get_next_child_node(device_node* parent, const device_attr* attributes,
 	NodeList::ConstIterator iterator = parent->Children().GetIterator();
 	device_node* last = *_node;
 
-	// skip those we already traversed
+	// skip past the child we last returned (if any)
 	while (iterator.HasNext() && last != NULL) {
-		device_node* node = iterator.Next();
-
-		if (node != last)
-			continue;
+		if (iterator.Next() == last)
+			break;
 	}
 
 	// find the next one that fits
 	while (iterator.HasNext()) {
 		device_node* node = iterator.Next();
-
 		if (!node->IsRegistered())
 			continue;
 
@@ -668,7 +665,8 @@ get_parent_node(device_node* node)
 	RecursiveLocker _(sLock);
 
 	device_node* parent = node->Parent();
-	parent->Acquire();
+	if (parent != NULL)
+		parent->Acquire();
 
 	return parent;
 }
