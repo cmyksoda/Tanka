@@ -420,6 +420,20 @@ PPCVMTranslationMapClassic::Map(addr_t virtualAddress,
 
 	PPCPagingMethodClassic* m = PPCPagingMethodClassic::Method();
 
+	// The generic physical page mapper reuses a fixed set of iospace virtual
+	// addresses, remapping them to new physical pages without unmapping first
+	// - it relies on Map() overwriting the existing translation, the way x86
+	// does. Our slot search below only ever fills an *invalid* PTE, so without
+	// removing a pre-existing mapping for this address we would leave a stale
+	// duplicate PTE (and its cached TLB entry) still pointing at the old
+	// physical page. The hardware hash walk could then satisfy the translation
+	// from the stale entry, so reads/writes through the window would hit the
+	// wrong physical page - manifesting as random kernel memory corruption once
+	// demand paging churns enough physical memory to force chunk eviction. Drop
+	// any existing translation for this address first. (For a genuinely fresh
+	// mapping this is a cheap lookup that finds nothing.)
+	RemovePageTableEntry(virtualAddress);
+
 	// Search for a free page table slot using the primary hash value
 	uint32 hash = page_table_entry::PrimaryHash(virtualSegmentID, virtualAddress);
 	page_table_entry_group *group = &(m->PageTable())[hash & m->PageTableHashMask()];
