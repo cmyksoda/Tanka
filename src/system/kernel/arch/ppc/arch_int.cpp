@@ -12,6 +12,7 @@
 
 
 #include <interrupts.h>
+#include <ksignal.h>
 #include <ksyscalls.h>
 #include <syscall_numbers.h>
 
@@ -23,6 +24,7 @@
 #include <smp.h>
 #include <thread.h>
 #include <timer.h>
+#include <user_debugger.h>
 #include <util/AutoLock.h>
 #include <util/DoublyLinkedList.h>
 #include <util/kernel_cpp.h>
@@ -114,6 +116,16 @@ ppc_exception_entry(int vector, struct iframe *iframe)
 		ppc_push_iframe(&thread->arch_info.iframes, iframe);
 	else
 		ppc_push_iframe(&gBootFrameStack, iframe);
+
+	// An exception taken from user mode is a kernel entry, just like a
+	// syscall. Pair it with thread_at_kernel_entry/exit so pending signals are
+	// delivered on the way back out; in particular the SIGSEGV that
+	// vm_page_fault raises for an unrecoverable user fault must be delivered
+	// here, otherwise the thread simply resumes the faulting instruction and
+	// refaults forever (pinning the CPU in a "Bad port ID" debug-event loop).
+	bool fromUserland = thread != NULL && (iframe->srr1 & (1 << 14)) != 0;
+	if (fromUserland)
+		thread_at_kernel_entry(system_time());
 
 	switch (vector) {
 		case 0x100: // system reset
@@ -211,9 +223,36 @@ dprintf("handling I/O interrupts done\n");
 		case 0x600: // alignment exception
 			panic("alignment exception: unimplemented\n");
 			break;
-		case 0x700: // program exception
-			panic("program exception: unimplemented\n");
+		case 0x700: // program exception (illegal/privileged insn, trap)
+		{
+			if ((iframe->srr1 & (1 << 14)) == 0) {
+				// In supervisor mode this is a genuine kernel bug.
+				print_iframe(iframe);
+				panic("program exception in kernel mode: srr0 %p\n",
+					(void*)iframe->srr0);
+				break;
+			}
+
+			// A user thread executed an illegal/privileged instruction or a
+			// trap. Raise SIGILL on it (delivered on the return-to-userland
+			// path, which terminates the thread if it has no handler) rather
+			// than panicking the whole kernel.
+			dprintf("program exception (0x700) in user thread %" B_PRId32
+				" \"%s\" at srr0 %p\n", thread->id, thread->name,
+				(void*)iframe->srr0);
+			enable_interrupts();
+			struct sigaction action;
+			if ((sigaction(SIGILL, NULL, &action) == 0
+					&& action.sa_handler != SIG_DFL
+					&& action.sa_handler != SIG_IGN)
+				|| user_debug_exception_occurred(B_INVALID_OPCODE_EXCEPTION,
+					SIGILL)) {
+				Signal signal(SIGILL, ILL_ILLOPC, 0, thread->team->id);
+				signal.SetAddress((void*)iframe->srr0);
+				send_signal_to_thread(thread, signal, 0);
+			}
 			break;
+		}
 		case 0x800: // FP unavailable exception
 			panic("FP unavailable exception: unimplemented\n");
 			break;
@@ -252,20 +291,11 @@ dprintf("handling I/O interrupts done\n");
 					}
 				}
 
-				thread_at_kernel_entry(system_time());
 				enable_interrupts();
 
 				syscall_dispatcher(syscall, (void*)args, &returnValue);
 
 				disable_interrupts();
-				if ((thread->flags & (THREAD_FLAGS_SIGNALS_PENDING
-						| THREAD_FLAGS_DEBUG_THREAD
-						| THREAD_FLAGS_TRAP_FOR_CORE_DUMP)) != 0) {
-					enable_interrupts();
-					thread_at_kernel_exit();
-				} else {
-					thread_at_kernel_exit_no_signals();
-				}
 
 				// Return value goes back in r3 (low 32 bits). The common
 				// status_t/ssize_t case is 32-bit and must land in r3; 64-bit
@@ -333,6 +363,20 @@ dprintf("handling I/O interrupts done\n");
 			scheduler_reschedule(B_THREAD_READY);
 			schedulerLocker.Unlock();
 			restore_interrupts(state);
+		}
+	}
+
+	// Return-to-userland: deliver any pending signals. This is where an
+	// unrecoverable fault's SIGSEGV finally terminates the thread.
+	if (fromUserland) {
+		disable_interrupts();
+		if ((thread->flags & (THREAD_FLAGS_SIGNALS_PENDING
+				| THREAD_FLAGS_DEBUG_THREAD
+				| THREAD_FLAGS_TRAP_FOR_CORE_DUMP)) != 0) {
+			enable_interrupts();
+			thread_at_kernel_exit();
+		} else {
+			thread_at_kernel_exit_no_signals();
 		}
 	}
 
