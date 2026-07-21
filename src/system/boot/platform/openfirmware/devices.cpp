@@ -247,10 +247,20 @@ status_t
 platform_register_boot_device(Node *device)
 {
 	disk_identifier disk;
+	memset(&disk, 0, sizeof(disk_identifier));
 
 	disk.bus_type = UNKNOWN_BUS;
 	disk.device_type = UNKNOWN_DEVICE;
 	disk.device.unknown.size = device->Size();
+
+	// Handle::Size() does not report the real disk size yet (it returns a
+	// placeholder), so we cannot compute meaningful check sums to uniquely
+	// identify the disk. Mark them unused; the kernel then identifies the boot
+	// partition by its offset (which is passed separately and is reliable).
+	for (int32 i = 0; i < NUM_DISK_CHECK_SUMS; i++) {
+		disk.device.unknown.check_sums[i].offset = -1;
+		disk.device.unknown.check_sums[i].sum = 0;
+	}
 
 	gBootParams.SetData(BOOT_VOLUME_DISK_IDENTIFIER, B_RAW_TYPE, &disk,
 		sizeof(disk_identifier));
