@@ -99,6 +99,7 @@ AddFilesToPackage add-ons kernel partitioning_systems :
 	;
 AddFilesToPackage add-ons kernel interrupt_controllers :
 	openpic@ppc
+	heathrow@ppc
 	;
 AddFilesToPackage add-ons kernel power cpufreq :
 	amd_pstates@x86,x86_64
@@ -335,6 +336,7 @@ AddBootModuleSymlinksToPackage
 	mmc_disk
 	nvme_disk
 	openpic@ppc
+	heathrow@ppc
 	packagefs
 	pci
 	<pci>designware@riscv64
