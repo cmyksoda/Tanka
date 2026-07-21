@@ -1928,6 +1928,7 @@ elf_load_user_image(const char *path, Team *team, uint32 flags, addr_t *entry)
 		char regionName[B_OS_NAME_LENGTH];
 		char *regionAddress;
 		char *originalRegionAddress;
+		char *mappedAddress = NULL;
 		area_id id;
 
 		mappedAreas[i] = -1;
@@ -1972,6 +1973,7 @@ elf_load_user_image(const char *path, Team *team, uint32 flags, addr_t *entry)
 
 			image->data_region.start = (addr_t)regionAddress;
 			image->data_region.size = memUpperBound;
+			mappedAddress = regionAddress;
 
 			// clean garbage brought by mmap (the region behind the file,
 			// at least parts of it are the bss and have to be zeroed)
@@ -2028,11 +2030,20 @@ elf_load_user_image(const char *path, Team *team, uint32 flags, addr_t *entry)
 
 			image->text_region.start = (addr_t)regionAddress;
 			image->text_region.size = segmentSize;
+			mappedAddress = regionAddress;
 		}
 
 		if (addressSpec != B_EXACT_ADDRESS) {
 			addressSpec = B_EXACT_ADDRESS;
-			delta = regionAddress - originalRegionAddress;
+			// Use the address the segment was actually mapped at, not
+			// regionAddress: for a writable segment with a .bss the data branch
+			// above advances regionAddress past the file part to place the bss,
+			// which would otherwise inflate the delta (and thus the computed
+			// dynamic-section address) by the segment's file size. This only
+			// bites when the first/only PT_LOAD is writable - as with the
+			// single merged RWE segment PowerPC binaries (e.g. runtime_loader)
+			// use.
+			delta = mappedAddress - originalRegionAddress;
 		}
 	}
 
