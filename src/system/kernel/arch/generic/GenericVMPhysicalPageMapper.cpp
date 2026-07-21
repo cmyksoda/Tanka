@@ -41,8 +41,12 @@ status_t
 GenericVMPhysicalPageMapper::GetPageCurrentCPU(phys_addr_t physicalAddress,
 	addr_t* _virtualAddress, void** _handle)
 {
-	// TODO:...
-	return B_UNSUPPORTED;
+	// No dedicated per-CPU fast path is implemented; fall back to the general
+	// (iospace-backed) mapping, which works regardless of the current CPU.
+	// Without this the *_current_cpu() API - and therefore
+	// vm_memcpy_to/from_physical() and vm_memset_physical() - returns
+	// B_UNSUPPORTED and silently copies nothing.
+	return GetPage(physicalAddress, _virtualAddress, _handle);
 }
 
 
@@ -50,8 +54,7 @@ status_t
 GenericVMPhysicalPageMapper::PutPageCurrentCPU(addr_t virtualAddress,
 	void* _handle)
 {
-	// TODO:...
-	return B_UNSUPPORTED;
+	return PutPage(virtualAddress, _handle);
 }
 
 

@@ -42,6 +42,7 @@ static paddr_chunk_desc *paddr_desc;	// will be one per physical chunk
 static paddr_chunk_desc **virtual_pmappings; // will be one ptr per virtual chunk in iospace
 static int first_free_vmapping;
 static int num_virtual_chunks;
+static int num_physical_chunks;
 static queue mapped_paddr_lru;
 static mutex sMutex = MUTEX_INITIALIZER("iospace_mutex");
 static sem_id sChunkAvailableSem;
@@ -259,9 +260,23 @@ generic_vm_physical_page_mapper_init(kernel_args *args,
 
 	*ioSpaceBase = sIOSpaceBase;
 
+	// paddr_desc is indexed by physical chunk (physicalAddress / chunkSize),
+	// so it needs one entry for every physical chunk in the machine. The old
+	// fixed size of 1024 chunks only covered the first 64 MB of RAM; on
+	// machines with more memory, mapping a page above that overran the array
+	// and returned a bogus virtual address (later tripping put_physical_page).
+	phys_addr_t maxPhysicalAddress = 0;
+	for (uint32 i = 0; i < args->num_physical_memory_ranges; i++) {
+		phys_addr_t end = args->physical_memory_range[i].start
+			+ args->physical_memory_range[i].size;
+		if (end > maxPhysicalAddress)
+			maxPhysicalAddress = end;
+	}
+	num_physical_chunks = maxPhysicalAddress / sIOSpaceChunkSize + 1;
+
 	// allocate some space to hold physical page mapping info
 	paddr_desc = (paddr_chunk_desc *)vm_allocate_early(args,
-		sizeof(paddr_chunk_desc) * 1024, ~0L,
+		sizeof(paddr_chunk_desc) * num_physical_chunks, ~0L,
 		B_KERNEL_READ_AREA | B_KERNEL_WRITE_AREA, 0);
 	num_virtual_chunks = sIOSpaceSize / sIOSpaceChunkSize;
 	virtual_pmappings = (paddr_chunk_desc **)vm_allocate_early(args,
@@ -272,7 +287,7 @@ generic_vm_physical_page_mapper_init(kernel_args *args,
 		paddr_desc, virtual_pmappings/*, iospace_pgtables*/));
 
 	// initialize our data structures
-	memset(paddr_desc, 0, sizeof(paddr_chunk_desc) * 1024);
+	memset(paddr_desc, 0, sizeof(paddr_chunk_desc) * num_physical_chunks);
 	memset(virtual_pmappings, 0, sizeof(paddr_chunk_desc *) * num_virtual_chunks);
 	first_free_vmapping = 0;
 	queue_init(&mapped_paddr_lru);
@@ -293,7 +308,7 @@ generic_vm_physical_page_mapper_init_post_area(kernel_args *args)
 
 	temp = (void *)paddr_desc;
 	create_area("physical_page_mapping_descriptors", &temp, B_EXACT_ADDRESS,
-		ROUNDUP(sizeof(paddr_chunk_desc) * 1024, B_PAGE_SIZE),
+		ROUNDUP(sizeof(paddr_chunk_desc) * num_physical_chunks, B_PAGE_SIZE),
 		B_ALREADY_WIRED, B_KERNEL_READ_AREA | B_KERNEL_WRITE_AREA);
 
 	temp = (void *)virtual_pmappings;
