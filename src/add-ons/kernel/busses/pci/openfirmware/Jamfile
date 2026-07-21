@@ -1,0 +1,9 @@
+SubDir HAIKU_TOP src add-ons kernel busses pci openfirmware ;
+
+SubDirC++Flags -fno-rtti ;
+
+UsePrivateKernelHeaders ;
+
+KernelAddon <pci>openfirmware :
+	openfirmware_pci.cpp
+;

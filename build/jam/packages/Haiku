@@ -46,6 +46,7 @@ AddFilesToPackage add-ons kernel busses pci :
 	<pci>designware@riscv64
 	<pci>ecam@riscv64,arm,arm64
 	<pci>x86@x86,x86_64
+	<pci>openfirmware@ppc
 	;
 AddFilesToPackage add-ons kernel busses random :
 	ccp_rng@x86,x86_64
@@ -342,6 +343,7 @@ AddBootModuleSymlinksToPackage
 	<pci>designware@riscv64
 	<pci>ecam@riscv64,arm,arm64
 	<pci>x86@x86,x86_64
+	<pci>openfirmware@ppc
 	fdt@riscv64,arm,arm64
 	scsi
 	scsi_cd
