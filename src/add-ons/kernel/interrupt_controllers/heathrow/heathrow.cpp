@@ -2,6 +2,10 @@
  * Copyright 2026, Haiku, Inc. All rights reserved.
  * Distributed under the terms of the MIT License.
  *
+ * Authors:
+ *		Sean Malseed, actionretro@pm.me
+ *		Claude (Anthropic), paired via Claude Code
+ *
  * Interrupt controller driver for the Apple "mac-io" Grand-Central-style
  * interrupt controller found in the Grand Central, Heathrow and Paddington
  * mac-io chips (Old World and early New World Power Macs / iMac G3). These
