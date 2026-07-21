@@ -12,6 +12,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+#include <syscalls.h>
+
 
 //#define TRACE_RLD
 #ifdef TRACE_RLD
@@ -22,9 +24,10 @@
 
 
 // PowerPC I/D caches are not coherent, so a relocation patched into what will
-// be executed as code (the fabricated PLT "b <addr>" below) must be flushed
-// from the data cache and invalidated in the instruction cache before it is
-// fetched. dcbst/icbi are unprivileged, so this works in userland.
+// be executed as code (the fabricated PLT "b <addr>" and the long-jump
+// trampolines below) must be flushed from the data cache and invalidated in the
+// instruction cache before it is fetched. dcbst/icbi are unprivileged, so this
+// works in userland.
 #define ELF_RELOC_CACHELINE 32
 
 static inline void
@@ -107,9 +110,60 @@ ha(Elf32_Word value)
 }
 
 
+// A PLT slot is only 8 bytes (two instructions), which is enough for a single
+// "b <target>" but not for an absolute jump to a target more than a 26-bit
+// branch (+/-32 MB) away. For those we route the slot through a 16-byte
+// "long jump island" trampoline (lis/ori/mtctr/bctr) allocated near the image,
+// close enough that the slot's "b" can reach the island and the island's bctr
+// then reaches anywhere. Mirrors the kernel's PLT trampoline pool, but the pool
+// is allocated at load time instead of reserved by a linker script (user .so's
+// have no such reservation).
+struct TrampolinePool {
+	uint32*		next;
+	uint32*		end;
+	bool		tried;
+};
+
+
+static uint32*
+allocate_trampoline(image_t* image, TrampolinePool* pool, size_t maxCount)
+{
+	if (pool->next == NULL) {
+		if (pool->tried)
+			return NULL;
+		pool->tried = true;
+
+		size_t size = maxCount * 4 * sizeof(uint32);
+		size = (size + B_PAGE_SIZE - 1) & ~(size_t)(B_PAGE_SIZE - 1);
+
+		// Ask for the area at-or-above the image's load base so it lands right
+		// after the image - within a single branch's reach of the PLT.
+		void* address = (void*)image->regions[0].vmstart;
+		area_id area = _kern_create_area("rld:plt_trampolines", &address,
+			B_BASE_ADDRESS, size, B_NO_LOCK,
+			B_READ_AREA | B_WRITE_AREA | B_EXECUTE_AREA);
+		if (area < 0) {
+			printf("runtime_loader: failed to allocate PLT trampoline pool: "
+				"%" B_PRId32 "\n", (status_t)area);
+			return NULL;
+		}
+
+		pool->next = (uint32*)address;
+		pool->end = (uint32*)((addr_t)address + size);
+	}
+
+	if (pool->next + 4 > pool->end)
+		return NULL;
+
+	uint32* island = pool->next;
+	pool->next += 4;
+	return island;
+}
+
+
 static int
 relocate_rela(image_t* rootImage, image_t* image, Elf32_Rela* rel,
-	size_t relLength, SymbolLookupCache* cache)
+	size_t relLength, SymbolLookupCache* cache, TrampolinePool* pool)
 {
 	for (size_t i = 0; i < relLength / sizeof(Elf32_Rela); i++) {
 		int type = ELF32_R_TYPE(rel[i].r_info);
@@ -207,18 +261,36 @@ relocate_rela(image_t* rootImage, image_t* image, Elf32_Rela* rel,
 
 			case R_PPC_JMP_SLOT:
 			{
-				// The PLT slot is 8 bytes/two instruction words. If the target
-				// is within a signed 26-bit branch displacement we can drop a
-				// single "b <target>" into the slot; images are loaded compactly
-				// enough that this always holds in practice. (The kernel handles
-				// the >24-bit case with a reserved trampoline pool; user images
-				// have no such pool - fail loudly rather than silently.)
-				addr_t jumpOffset = S - P;
+				// If the target is within a single 26-bit branch, drop a
+				// "b <target>" straight into the slot. Otherwise branch to a
+				// long-jump trampoline near the image that does the absolute
+				// jump.
+				addr_t target = S + A;
+				addr_t jumpOffset = target - P;
 				if ((jumpOffset & 0xfc000000) != 0
 					&& (~jumpOffset & 0xfe000000) != 0) {
-					printf("R_PPC_JMP_SLOT: target too far for a single branch "
-						"(offset %p)\n", (void*)jumpOffset);
-					return B_NOT_SUPPORTED;
+					uint32* island = allocate_trampoline(image, pool,
+						image->pltrel_len / sizeof(Elf32_Rela) + 1);
+					if (island == NULL) {
+						printf("R_PPC_JMP_SLOT: no trampoline for far target "
+							"%p\n", (void*)target);
+						return B_NOT_SUPPORTED;
+					}
+
+					island[0] = 0x3d600000 | hi(target);	// lis   r11, target@hi
+					island[1] = 0x616b0000 | lo(target);	// ori   r11, r11, target@lo
+					island[2] = 0x7d6903a6;					// mtctr r11
+					island[3] = 0x4e800420;					// bctr
+					sync_icache_for_relocation((addr_t)island,
+						4 * sizeof(uint32));
+
+					jumpOffset = (addr_t)island - P;
+					if ((jumpOffset & 0xfc000000) != 0
+						&& (~jumpOffset & 0xfe000000) != 0) {
+						printf("R_PPC_JMP_SLOT: trampoline out of branch range "
+							"(offset %p)\n", (void*)jumpOffset);
+						return B_NOT_SUPPORTED;
+					}
 				}
 				*(uint32*)P = 0x48000000 | (jumpOffset & 0x03fffffc);
 				sync_icache_for_relocation(P, sizeof(uint32));
@@ -240,12 +312,13 @@ status_t
 arch_relocate_image(image_t* rootImage, image_t* image,
 	SymbolLookupCache* cache)
 {
+	TrampolinePool pool = { NULL, NULL, false };
 	status_t status;
 
 	// PowerPC uses RELA relocations exclusively (no REL).
 	if (image->rela) {
 		status = relocate_rela(rootImage, image, image->rela, image->rela_len,
-			cache);
+			cache, &pool);
 		if (status != B_OK)
 			return status;
 	}
@@ -253,7 +326,7 @@ arch_relocate_image(image_t* rootImage, image_t* image,
 	// The PLT relocations are RELA too (.rela.plt).
 	if (image->pltrel) {
 		status = relocate_rela(rootImage, image, (Elf32_Rela*)image->pltrel,
-			image->pltrel_len, cache);
+			image->pltrel_len, cache, &pool);
 		if (status != B_OK)
 			return status;
 	}
