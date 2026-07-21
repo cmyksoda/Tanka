@@ -1,0 +1,7 @@
+SubDir HAIKU_TOP src add-ons kernel busses ata macio ;
+
+UsePrivateHeaders drivers kernel ;
+
+KernelAddon macio_ata :
+	macio_ata.cpp
+	;

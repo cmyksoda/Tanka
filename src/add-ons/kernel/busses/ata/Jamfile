@@ -7,3 +7,4 @@ SubInclude HAIKU_TOP src add-ons kernel busses ata it8211 ;
 SubInclude HAIKU_TOP src add-ons kernel busses ata promise_tx2 ;
 SubInclude HAIKU_TOP src add-ons kernel busses ata silicon_image_3112 ;
 SubInclude HAIKU_TOP src add-ons kernel busses ata legacy_sata ;
+SubInclude HAIKU_TOP src add-ons kernel busses ata macio ;

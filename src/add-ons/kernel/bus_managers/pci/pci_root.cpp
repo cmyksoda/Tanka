@@ -44,6 +44,13 @@ pci_root_traverse(device_node* node, PCIBus* bus)
 	for (PCIDev* dev = bus->child; dev != NULL; dev = dev->next) {
 		const pci_info& info = dev->info;
 
+		// Apple "mac-io" chips are a single PCI function that fans out to many
+		// unrelated sub-devices (IDE, interrupt controller, ethernet, ...), so
+		// the node must allow multiple driver children rather than a single one.
+		uint32 deviceFlags = B_FIND_CHILD_ON_DEMAND;
+		if (info.vendor_id == 0x106b)
+			deviceFlags |= B_FIND_MULTIPLE_CHILDREN;
+
 		device_attr attrs[] = {
 			// info about device
 			{B_DEVICE_BUS, B_STRING_TYPE, {.string = "pci"}},
@@ -62,7 +69,7 @@ pci_root_traverse(device_node* node, PCIBus* bus)
 			{B_DEVICE_SUB_TYPE, B_UINT16_TYPE, {.ui16 = info.class_sub}},
 			{B_DEVICE_INTERFACE, B_UINT16_TYPE, {.ui16 = info.class_api}},
 
-			{B_DEVICE_FLAGS, B_UINT32_TYPE, {.ui32 = B_FIND_CHILD_ON_DEMAND}},
+			{B_DEVICE_FLAGS, B_UINT32_TYPE, {.ui32 = deviceFlags}},
 			{}
 		};
 

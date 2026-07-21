@@ -203,7 +203,7 @@ load_modules(stage2_args* args, BootVolume& volume)
 		// boot volume is even mounted, so there is no later point at which
 		// it could otherwise be picked up - it has to be preloaded here or
 		// not at all, exactly like the categories already in this list.
-		const char *paths[] = { "busses/pci", "bus_managers", "busses/ide", "busses/scsi",
+		const char *paths[] = { "busses/pci", "busses/ata", "bus_managers", "busses/ide", "busses/scsi",
 			"generic", "partitioning_systems", "drivers/bin",
 			"interrupt_controllers", NULL};
 

@@ -1711,6 +1711,7 @@ device_node::_GetNextDriverPath(void*& cookie, KPath& _path)
 				} else if (!generic) {
 					_AddPath(*stack, "drivers");
 					_AddPath(*stack, "busses/virtio");
+					_AddPath(*stack, "busses", "ata");
 				} else {
 					// For generic drivers, we only allow busses when the
 					// request is more specified
@@ -2004,7 +2005,11 @@ device_node::Probe(const char* devicePath, uint32 updateCycle)
 			&& get_attr_uint16(this, B_DEVICE_TYPE, &type, false) == B_OK) {
 			// Check if this node matches the device path
 			// TODO: maybe make this extendible via settings file?
-			if (!strcmp(devicePath, "disk")) {
+			if ((fFlags & B_FIND_MULTIPLE_CHILDREN) != 0) {
+				// A multi-function nexus (e.g. an Apple mac-io chip) can host
+				// child devices of any class, so probe it for every path.
+				matches = true;
+			} else if (!strcmp(devicePath, "disk")) {
 				matches = type == PCI_mass_storage
 					|| (type == PCI_base_peripheral
 						&& (subType == PCI_sd_host

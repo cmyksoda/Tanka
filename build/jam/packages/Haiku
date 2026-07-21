@@ -28,6 +28,7 @@ AddFilesToPackage add-ons kernel busses agp_gart :
 	;
 
 AddFilesToPackage add-ons kernel busses ata :
+	macio_ata@ppc
 	generic_ide_pci
 	it8211
 	legacy_sata
@@ -326,6 +327,7 @@ AddBootModuleSymlinksToPackage
 	dpc
 	efi_gpt
 	generic_ide_pci
+	macio_ata@ppc
 	hyperv@x86,x86_64
 	hyperv_scsi@x86,x86_64
 	ide_isa@x86
