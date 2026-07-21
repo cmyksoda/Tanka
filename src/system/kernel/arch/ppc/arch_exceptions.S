@@ -457,3 +457,16 @@ __restore_regs_and_rfi:
 
 	/* return from interrupt */
 	rfi
+
+
+/* void ppc_enter_userspace(struct iframe *frame)
+ *
+ * Drops into user mode using a fully-populated iframe. r3 holds the iframe
+ * pointer on entry (SysV ABI). __restore_regs_and_rfi expects the iframe base
+ * in r1 and pulls SRR0/SRR1 (entry point and user MSR), the user stack pointer
+ * (iframe.r1) and the argument registers straight out of it, ending in rfi. We
+ * never return here. */
+FUNCTION(ppc_enter_userspace):
+	mr		%r1, %r3
+	b		__restore_regs_and_rfi
+FUNCTION_END(ppc_enter_userspace)

@@ -12,6 +12,9 @@
 
 
 #include <arch/cpu.h>
+#include <arch/int.h>
+#include <interrupts.h>
+#include <smp.h>
 #include <arch/thread.h>
 #include <boot/stage2.h>
 #include <kernel.h>
@@ -158,10 +161,12 @@ arch_thread_init_tls(Thread *thread)
 void
 arch_thread_context_switch(Thread *t_from, Thread *t_to)
 {
-    // set the new kernel stack in the EAR register.
-	// this is used in the exception handler code to decide what kernel stack to
-	// switch to if the exception had happened when the processor was in user mode
-	asm("mtear  %0" :: "g"(t_to->kernel_stack_top - 8));
+	// Record the new thread's kernel stack in this CPU's exception context.
+	// The exception entry code (ppc_exception_tail) reads context->kernel_stack
+	// to know which stack to switch to when an exception is taken from user
+	// mode. (The previous EAR write was dead - nothing ever read EAR back.)
+	ppc_get_cpu_exception_context(smp_get_current_cpu())->kernel_stack
+		= (void*)(t_to->kernel_stack_top - 8);
 
     // switch the asids if we need to
 	if (t_to->team->address_space != NULL) {
@@ -186,10 +191,43 @@ arch_thread_dump_info(void *info)
 }
 
 
+extern "C" void ppc_enter_userspace(struct iframe *frame);
+
 status_t
 arch_thread_enter_userspace(Thread *thread, addr_t entry, void *arg1, void *arg2)
 {
-	panic("arch_thread_enter_uspace(): not yet implemented\n");
+	addr_t stackTop = thread->user_stack_base + thread->user_stack_size;
+
+	// Make sure this CPU's exception context points at our kernel stack, so
+	// the first syscall/interrupt taken from user mode lands on a valid stack.
+	ppc_get_cpu_exception_context(smp_get_current_cpu())->kernel_stack
+		= (void*)(thread->kernel_stack_top - 8);
+
+	// Build a synthetic iframe describing the initial user state and let the
+	// standard exception-return path (rfi) drop us into user mode.
+	struct iframe frame;
+	memset(&frame, 0, sizeof(frame));
+
+	frame.srr0 = entry;
+	frame.srr1 = MSR_PRIVILEGE_LEVEL | MSR_EXCEPTIONS_ENABLED
+		| MSR_FP_AVAILABLE | MSR_MACHINE_CHECK_ENABLED
+		| MSR_INST_ADDRESS_TRANSLATION | MSR_DATA_ADDRESS_TRANSLATION;
+
+	// 16-byte align the user stack and lay down an empty initial frame
+	// (back chain NULL) per the SysV ABI.
+	stackTop &= ~0xf;
+	stackTop -= 16;
+	*(uint32*)stackTop = 0;
+
+	frame.r1 = stackTop;					// user stack pointer
+	frame.r2 = thread->user_local_storage;	// TLS pointer (ppc32)
+	frame.r3 = (uint32)arg1;
+	frame.r4 = (uint32)arg2;
+
+	disable_interrupts();
+	ppc_enter_userspace(&frame);
+
+	// never reached
 	return B_ERROR;
 }
 
