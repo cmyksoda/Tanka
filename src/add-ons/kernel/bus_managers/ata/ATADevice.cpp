@@ -606,6 +606,34 @@ ATADevice::Identify()
 	// get the infoblock
 	fChannel->ReadPIO((uint8 *)&fInfoBlock, sizeof(fInfoBlock));
 
+#if B_HOST_IS_BENDIAN
+	// The IDENTIFY DEVICE block arrives little-endian, as a raw byte stream
+	// from the data port. Swap each 16-bit word to host order so the
+	// little-endian bitfields and 16-bit numeric fields are interpreted
+	// correctly. The ASCII string fields (serial words 10-19, firmware 23-26,
+	// model 27-46) are descrambled later by swap_words() and must stay in wire
+	// order, so leave them untouched.
+	{
+		uint16* words = (uint16*)&fInfoBlock;
+		size_t wordCount = sizeof(fInfoBlock) / sizeof(uint16);
+		for (size_t i = 0; i < wordCount; i++) {
+			if ((i >= 10 && i <= 19) || (i >= 23 && i <= 46))
+				continue;
+			words[i] = B_SWAP_INT16(words[i]);
+		}
+		// Multi-word numeric fields are little-endian (low word first); put
+		// their constituent words into host order.
+		fInfoBlock.lba_sector_count =
+			(fInfoBlock.lba_sector_count << 16) | (fInfoBlock.lba_sector_count >> 16);
+		uint64 lba48 = fInfoBlock.lba48_sector_count;
+		fInfoBlock.lba48_sector_count =
+			((lba48 & 0xffffULL) << 48) | ((lba48 & 0xffff0000ULL) << 16)
+			| ((lba48 >> 16) & 0xffff0000ULL) | ((lba48 >> 48) & 0xffffULL);
+		fInfoBlock.logical_sector_size =
+			(fInfoBlock.logical_sector_size << 16) | (fInfoBlock.logical_sector_size >> 16);
+	}
+#endif
+
 	if (fChannel->WaitDataRequest(false) != B_OK) {
 		TRACE_ERROR("device disagrees on info block length\n");
 		return B_ERROR;
