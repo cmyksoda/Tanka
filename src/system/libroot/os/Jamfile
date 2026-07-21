@@ -42,6 +42,7 @@ for architectureObject in [ MultiArchSubDirSetup ] {
 			time.cpp
 			syscalls.S
 			wait_for_objects.cpp
+			gcc_syslibs_compat.cpp
 
 			# locks
 			init_once.cpp
