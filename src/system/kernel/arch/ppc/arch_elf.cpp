@@ -411,7 +411,17 @@ dprintf("R_PPC_GOT16 overflow\n");
 						trampolinesUsed++;
 
 						uint32* code = (uint32*)island;
-						code[0] = 0x3c000000 | ha(S);	// lis   r0, S@ha
+						// Use hi() (plain high 16 bits), NOT ha(): the second
+						// instruction is ori (zero-extending), not a
+						// sign-extending addi. ha() adds 1 to the high half
+						// whenever lo(S) has bit 15 set, to compensate for
+						// addi's sign extension - but ori doesn't sign-extend,
+						// so pairing ha() with ori overshoots the target by
+						// 0x10000 for every symbol whose low half is >= 0x8000
+						// (roughly half of them). That sent trampolined calls
+						// 64 KB past their target (e.g. a module's get_module
+						// call landed in generate_topology_array).
+						code[0] = 0x3c000000 | hi(S);	// lis   r0, S@hi
 						code[1] = 0x60000000 | lo(S);	// ori   r0, r0, S@l
 						code[2] = 0x7c0903a6;			// mtctr r0
 						code[3] = 0x4e800420;			// bctr
