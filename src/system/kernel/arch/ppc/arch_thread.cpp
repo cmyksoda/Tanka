@@ -12,6 +12,7 @@
 
 
 #include <arch/cpu.h>
+#include <commpage.h>
 #include <arch/int.h>
 #include <interrupts.h>
 #include <smp.h>
@@ -223,6 +224,17 @@ arch_thread_enter_userspace(Thread *thread, addr_t entry, void *arg1, void *arg2
 	frame.r2 = thread->user_local_storage;	// TLS pointer (ppc32)
 	frame.r3 = (uint32)arg1;
 	frame.r4 = (uint32)arg2;
+
+	// When the thread's top function (libroot's thread_entry()) returns, its
+	// blr branches to whatever we leave in LR. Point it at the commpage
+	// thread-exit stub so the thread cleanly calls exit_thread() with its
+	// return value (in r3) rather than branching to a null LR and faulting
+	// at address 0.
+	addr_t commPageAddress = (addr_t)thread->team->commpage_address;
+	if (commPageAddress != 0) {
+		frame.lr = ((addr_t*)commPageAddress)[COMMPAGE_ENTRY_PPC_THREAD_EXIT]
+			+ commPageAddress;
+	}
 
 	disable_interrupts();
 	ppc_enter_userspace(&frame);

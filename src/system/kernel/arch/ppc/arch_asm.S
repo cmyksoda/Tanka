@@ -9,6 +9,7 @@
 
 #include "asm_defs.h"
 #include "asm_offsets.h"
+#include "syscall_numbers.h"
 
 #define MSR_EXCEPTIONS_ENABLED 15
 
@@ -447,3 +448,21 @@ FUNCTION(_arch_cpu_user_strlcpy):
 	blr
 FUNCTION_END(_arch_cpu_user_strlcpy)
 
+
+/* The kernel installs the address of this stub as the initial link register
+   of every userland thread (see arch_thread_enter_userspace()). When a
+   thread's top function - libroot's thread_entry() - returns, its blr lands
+   here instead of at a null LR, and we call exit_thread() with the return
+   value already sitting in r3. Copied into the commpage by
+   arch_commpage_init(), so it must be position independent. */
+FUNCTION(ppc_userspace_thread_exit):
+	li		%r0, SYSCALL_EXIT_THREAD
+	sc
+	/* _kern_exit_thread() never returns; spin just in case it ever does. */
+	b		.
+FUNCTION_END(ppc_userspace_thread_exit)
+
+/* Marks the end of the stub so its length can be measured. */
+FUNCTION(ppc_end_userspace_thread_exit):
+	blr
+FUNCTION_END(ppc_end_userspace_thread_exit)
