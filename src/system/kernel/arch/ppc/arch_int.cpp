@@ -12,6 +12,8 @@
 
 
 #include <interrupts.h>
+#include <ksyscalls.h>
+#include <syscall_numbers.h>
 
 #include <arch/smp.h>
 #include <boot/kernel_args.h>
@@ -100,7 +102,7 @@ extern "C" void ppc_exception_entry(int vector, struct iframe *iframe);
 void
 ppc_exception_entry(int vector, struct iframe *iframe)
 {
-	if (vector != 0x900) {
+	if (vector != 0x900 && vector != 0xc00) {
 		dprintf("ppc_exception_entry: time %lld vector 0x%x, iframe %p, "
 			"srr0: %p\n", system_time(), vector, iframe, (void*)iframe->srr0);
 	}
@@ -164,9 +166,20 @@ ppc_exception_entry(int vector, struct iframe *iframe)
 
 			addr_t newip;
 
-			vm_page_fault(iframe->dar, iframe->srr0,
-				iframe->dsisr & (1 << 25), // store or load
-				false,
+			// On an instruction storage interrupt (0x400/ISI) the faulting
+			// address is the instruction pointer in SRR0 - DAR is only set for
+			// data storage interrupts (0x300/DSI). Likewise the store/load
+			// status lives in DSISR only for DSI; an instruction fetch is
+			// always a read.
+			bool isInstructionFault = (vector == 0x400);
+			addr_t faultAddress
+				= isInstructionFault ? iframe->srr0 : iframe->dar;
+			bool isWrite
+				= !isInstructionFault && (iframe->dsisr & (1 << 25));
+
+			vm_page_fault(faultAddress, iframe->srr0,
+				isWrite,
+				isInstructionFault, // execute access?
 				iframe->srr1 & (1 << 14), // was the system in user or supervisor
 				&newip);
 			if (newip != 0) {
@@ -208,8 +221,61 @@ dprintf("handling I/O interrupts done\n");
 			timer_interrupt();
 			break;
 		case 0xc00: // system call
-			panic("system call exception: unimplemented\n");
+		{
+			uint32 syscall = iframe->r0;
+			uint64 returnValue = 0;
+
+			if (syscall < (uint32)kSyscallCount) {
+				// The SysV PPC ABI passes the first eight argument words in
+				// r3-r10 and spills the remainder into the caller's parameter
+				// save area at sp+8. 64-bit arguments occupy the next
+				// consecutive register pair (no even-register alignment on
+				// this ABI), so gathering the registers in order reproduces
+				// exactly the packed argument buffer the dispatcher expects.
+				uint32 args[20];
+				uint32 regArgs[8] = {
+					iframe->r3, iframe->r4, iframe->r5, iframe->r6,
+					iframe->r7, iframe->r8, iframe->r9, iframe->r10
+				};
+				int argSize = kSyscallInfos[syscall].parameter_size;
+				if (argSize > (int)sizeof(args))
+					argSize = (int)sizeof(args);
+				int regBytes = argSize < (int)sizeof(regArgs)
+					? argSize : (int)sizeof(regArgs);
+				memcpy(args, regArgs, regBytes);
+				if (argSize > (int)sizeof(regArgs)) {
+					if (user_memcpy((uint8*)args + sizeof(regArgs),
+							(void*)(iframe->r1 + 8),
+							argSize - sizeof(regArgs)) != B_OK) {
+						iframe->r3 = (uint32)B_BAD_ADDRESS;
+						break;
+					}
+				}
+
+				thread_at_kernel_entry(system_time());
+				enable_interrupts();
+
+				syscall_dispatcher(syscall, (void*)args, &returnValue);
+
+				disable_interrupts();
+				if ((thread->flags & (THREAD_FLAGS_SIGNALS_PENDING
+						| THREAD_FLAGS_DEBUG_THREAD
+						| THREAD_FLAGS_TRAP_FOR_CORE_DUMP)) != 0) {
+					enable_interrupts();
+					thread_at_kernel_exit();
+				} else {
+					thread_at_kernel_exit_no_signals();
+				}
+
+				// Return value goes back in r3 (low 32 bits). The common
+				// status_t/ssize_t case is 32-bit and must land in r3; 64-bit
+				// returns (off_t, bigtime_t) are truncated for now.
+				iframe->r3 = (uint32)returnValue;
+			} else {
+				iframe->r3 = (uint32)B_BAD_VALUE;
+			}
 			break;
+		}
 		case 0xd00: // trace exception
 			panic("trace exception: unimplemented\n");
 			break;
