@@ -36,7 +36,7 @@ rule ArchitectureSetup architecture
 	local cpu = $(HAIKU_CPU_$(architecture)) ;
 	local archFlags ;
 	switch $(cpu) {
-		case ppc : archFlags += -mcpu=440fp ;
+		case ppc : archFlags += -mcpu=750 ;
 		case arm : archFlags += -march=armv7-a -mfloat-abi=hard ;
 		case arm64 : archFlags += -march=armv8.2-a+fp16 ;
 		case x86 : archFlags += -march=pentium ;
