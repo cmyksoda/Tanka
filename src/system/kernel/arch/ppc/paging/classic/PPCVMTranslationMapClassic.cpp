@@ -112,6 +112,10 @@
 #define MAX_VSID_BASES (B_PAGE_SIZE * 8)
 static uint32 sVSIDBaseBitmap[MAX_VSID_BASES / (sizeof(uint32) * 8)];
 static spinlock sVSIDBaseBitmapLock;
+// The kernel map's VSID base, cached for the eviction code below. The
+// kernel owns the 16 VSIDs [sKernelVSIDBase, sKernelVSIDBase + 15]
+// (all 16 segments); user maps get non-overlapping bases.
+static uint32 sKernelVSIDBase = 0;
 
 #define VSID_BASE_SHIFT 3
 #define VADDR_TO_VSID(vsidBase, vaddr) (vsidBase + ((vaddr) >> 28))
@@ -237,6 +241,7 @@ PPCVMTranslationMapClassic::Init(bool kernel)
 		// mapping happened to already cover that virtual range instead.
 		// Query the real, current value instead of assuming it.
 		fVSIDBase = get_sr((void*)0) & 0xffffff;
+		sKernelVSIDBase = fVSIDBase;
 
 		// Two VSID bases are reserved for the kernel, spanning it: the
 		// kernel's fVSIDBase covers all 16 segments (this translation map
@@ -494,8 +499,26 @@ PPCVMTranslationMapClassic::Map(addr_t virtualAddress,
 		virtualAddress);
 	page_table_entry_group *primaryGroup
 		= &(m->PageTable())[primaryHash & m->PageTableHashMask()];
+	// Choose the victim carefully: never evict a kernel mapping. A user
+	// mapping simply refaults the next time it is touched, but a kernel
+	// translation may be accessed again with interrupts disabled (e.g.
+	// inside a page-queue critical section), where a fault cannot be
+	// serviced and instead panics ("page fault, but interrupts were
+	// disabled"). Prefer a user-owned entry; only if the whole group is
+	// kernel-owned do we fall back to the rotor.
 	static uint32 sEvictionRotor = 0;
-	int victim = sEvictionRotor++ & 7;
+	int victim = -1;
+	for (int i = 0; i < 8; i++) {
+		int slot = (sEvictionRotor + i) & 7;
+		uint32 vsid = primaryGroup->entry[slot].virtual_segment_id;
+		if (vsid < sKernelVSIDBase || vsid > sKernelVSIDBase + 15) {
+			victim = slot;
+			break;
+		}
+	}
+	if (victim < 0)
+		victim = sEvictionRotor & 7;
+	sEvictionRotor++;
 	m->FillPageTableEntry(&primaryGroup->entry[victim], virtualSegmentID,
 		virtualAddress, physicalAddress, protection, memoryType, false);
 	return B_OK;
