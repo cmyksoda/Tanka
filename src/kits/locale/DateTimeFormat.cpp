@@ -56,6 +56,8 @@ BDateTimeFormat::SetDateTimeFormat(BDateFormatStyle dateStyle,
 	DateTimePatternGenerator* generator
 		= DateTimePatternGenerator::createInstance(
 			*BLanguage::Private(&fLanguage).ICULocale(), error);
+	if (generator == NULL || U_FAILURE(error))
+		return;
 
 	BString skeleton;
 	if (elements & B_DATE_ELEMENT_YEAR)
@@ -83,6 +85,10 @@ BDateTimeFormat::SetDateTimeFormat(BDateFormatStyle dateStyle,
 
 	UnicodeString pattern = generator->getBestPattern(
 		UnicodeString::fromUTF8(skeleton.String()), error);
+	if (U_FAILURE(error)) {
+		delete generator;
+		return;
+	}
 
 	BString buffer;
 	BStringByteSink stringConverter(&buffer);
