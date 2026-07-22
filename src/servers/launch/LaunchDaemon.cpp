@@ -586,8 +586,32 @@ LaunchDaemon::MessageReceived(BMessage* message)
 					status_t status = rosterPrivate.IsShutDownInProgress(
 						&inProgress);
 					if (status != B_OK || !inProgress) {
-						// TODO: take restart throttle into account
-						_LaunchJob(job);
+						// Restart throttle: a service that crashes almost
+						// immediately after being (re)started is counted as a
+						// rapid failure. After too many consecutive rapid
+						// failures we stop restarting it, so a service that
+						// crashes on startup does not spin the launch daemon
+						// (and debug_server) in an endless respawn loop.
+						const bigtime_t kMinRunTime = 2000000;
+							// 2 seconds
+						const int32 kMaxRapidFailures = 5;
+						bool giveUp = false;
+						if (job->LastLaunchTime() > 0 && system_time()
+								- job->LastLaunchTime() < kMinRunTime) {
+							int32 failures = job->FailureCount() + 1;
+							job->SetFailureCount(failures);
+							if (failures >= kMaxRapidFailures) {
+								debug_printf("launch_daemon: service %s keeps "
+									"crashing right after start (%" B_PRId32
+									" times); not restarting it.\n",
+									job->Name(), failures);
+								giveUp = true;
+							}
+						} else
+							job->SetFailureCount(0);
+
+						if (!giveUp)
+							_LaunchJob(job);
 					}
 				}
 			}

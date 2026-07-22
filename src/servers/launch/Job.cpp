@@ -33,6 +33,8 @@ Job::Job(const char* name)
 	fDefaultPort(-1),
 	fToken((uint32)B_PREFERRED_TOKEN),
 	fLaunchStatus(B_NO_INIT),
+	fLastLaunchTime(-1),
+	fFailureCount(0),
 	fTarget(NULL),
 	fPendingLaunchDataReplies(0),
 	fTeamListener(NULL)
@@ -53,6 +55,8 @@ Job::Job(const Job& other)
 	fDefaultPort(-1),
 	fToken((uint32)B_PREFERRED_TOKEN),
 	fLaunchStatus(B_NO_INIT),
+	fLastLaunchTime(-1),
+	fFailureCount(0),
 	fTarget(other.Target()),
 	fPendingLaunchDataReplies(0)
 {
@@ -351,6 +355,8 @@ Job::SetDefaultPort(port_id port)
 status_t
 Job::Launch()
 {
+	fLastLaunchTime = system_time();
+
 	// Build environment
 
 	std::vector<const char*> environment;
@@ -430,6 +436,27 @@ Job::TeamDeleted()
 
 	MutexLocker locker(fLaunchStatusLock);
 	fLaunchStatus = B_NO_INIT;
+}
+
+
+bigtime_t
+Job::LastLaunchTime() const
+{
+	return fLastLaunchTime;
+}
+
+
+int32
+Job::FailureCount() const
+{
+	return fFailureCount;
+}
+
+
+void
+Job::SetFailureCount(int32 count)
+{
+	fFailureCount = count;
 }
 
 

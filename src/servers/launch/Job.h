@@ -91,6 +91,10 @@ public:
 			bool				IsLaunched() const;
 			bool				IsRunning() const;
 			void				TeamDeleted();
+
+			bigtime_t			LastLaunchTime() const;
+			int32				FailureCount() const;
+			void				SetFailureCount(int32 count);
 			bool				CanBeLaunched() const;
 
 			bool				IsLaunching() const;
@@ -138,6 +142,8 @@ private:
 			uint32				fToken;
 			status_t			fLaunchStatus;
 			mutex				fLaunchStatusLock;
+			bigtime_t			fLastLaunchTime;
+			int32				fFailureCount;
 			::Target*			fTarget;
 			::Condition*		fCondition;
 			BStringList			fPendingJobs;
