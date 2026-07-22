@@ -100,14 +100,20 @@ print_iframe(struct iframe *frame)
 }
 
 
+// Set to 1 to trace every exception (very noisy - floods the serial
+// console and the framebuffer, and slows the boot dramatically).
+#define TRACE_PPC_EXCEPTIONS 0
+
 extern "C" void ppc_exception_entry(int vector, struct iframe *iframe);
 void
 ppc_exception_entry(int vector, struct iframe *iframe)
 {
+#if TRACE_PPC_EXCEPTIONS
 	if (vector != 0x900 && vector != 0xc00) {
 		dprintf("ppc_exception_entry: time %lld vector 0x%x, iframe %p, "
 			"srr0: %p\n", system_time(), vector, iframe, (void*)iframe->srr0);
 	}
+#endif
 
 	Thread *thread = thread_get_current_thread();
 

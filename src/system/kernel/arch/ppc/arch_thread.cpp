@@ -20,6 +20,7 @@
 #include <boot/stage2.h>
 #include <kernel.h>
 #include <thread.h>
+#include <ksignal.h>
 #include <vm/vm_types.h>
 #include <vm/VMAddressSpace.h>
 //#include <arch/vm_translation_map.h>
@@ -247,7 +248,29 @@ arch_thread_enter_userspace(Thread *thread, addr_t entry, void *arg1, void *arg2
 bool
 arch_on_signal_stack(Thread *thread)
 {
-	return false;
+	struct iframe* frame = ppc_get_user_iframe();
+	if (frame == NULL)
+		return false;
+
+	return frame->r1 >= thread->signal_stack_base
+		&& frame->r1 < thread->signal_stack_base + thread->signal_stack_size;
+}
+
+
+static uint8*
+get_signal_stack(Thread* thread, struct iframe* frame, struct sigaction* action,
+	size_t spaceNeeded)
+{
+	// use the alternate signal stack if we should and can
+	if (thread->signal_stack_enabled && (action->sa_flags & SA_ONSTACK) != 0
+		&& (frame->r1 < thread->signal_stack_base
+			|| frame->r1 >= thread->signal_stack_base
+				+ thread->signal_stack_size)) {
+		addr_t stackTop = thread->signal_stack_base + thread->signal_stack_size;
+		return (uint8*)ROUNDDOWN(stackTop - spaceNeeded, 16);
+	}
+
+	return (uint8*)ROUNDDOWN(frame->r1 - spaceNeeded, 16);
 }
 
 
@@ -255,14 +278,137 @@ status_t
 arch_setup_signal_frame(Thread *thread, struct sigaction *sa,
 	struct signal_frame_data *signalFrameData)
 {
-	return B_ERROR;
+	struct iframe* frame = ppc_get_user_iframe();
+	if (frame == NULL) {
+		panic("arch_setup_signal_frame(): No user iframe!");
+		return B_ERROR;
+	}
+
+	// save the volatile register state into the signal context (vregs)
+	mcontext_t& regs = signalFrameData->context.uc_mcontext;
+	regs.pc = frame->srr0;
+	regs.r0 = frame->r0;
+	regs.r1 = frame->r1;
+	regs.r2 = frame->r2;
+	regs.r3 = frame->r3;
+	regs.r4 = frame->r4;
+	regs.r5 = frame->r5;
+	regs.r6 = frame->r6;
+	regs.r7 = frame->r7;
+	regs.r8 = frame->r8;
+	regs.r9 = frame->r9;
+	regs.r10 = frame->r10;
+	regs.r11 = frame->r11;
+	regs.r12 = frame->r12;
+	regs.f0 = frame->f0;
+	regs.f1 = frame->f1;
+	regs.f2 = frame->f2;
+	regs.f3 = frame->f3;
+	regs.f4 = frame->f4;
+	regs.f5 = frame->f5;
+	regs.f6 = frame->f6;
+	regs.f7 = frame->f7;
+	regs.f8 = frame->f8;
+	regs.f9 = frame->f9;
+	regs.f10 = frame->f10;
+	regs.f11 = frame->f11;
+	regs.f12 = frame->f12;
+	regs.f13 = frame->f13;
+	regs.fpscr = frame->fpscr;
+	regs.ctr = frame->ctr;
+	regs.xer = frame->xer;
+	regs.cr = frame->cr;
+	regs.msr = frame->srr1;
+	regs.lr = frame->lr;
+	// fill in the stack info and the syscall-restart return value
+	signal_get_user_stack(frame->r1, &signalFrameData->context.uc_stack);
+	signalFrameData->syscall_restart_return_value = frame->r3;
+
+	// Reserve a 16-byte linkage area below the signal_frame_data blob so the
+	// handler trampoline (a normal ppc function) can store its return address
+	// at sp+4 without clobbering the data.
+	size_t dataSize = (sizeof(*signalFrameData) + 15) & ~(size_t)15;
+	uint8* userStack = get_signal_stack(thread, frame, sa, dataSize + 16);
+	addr_t dataAddress = (addr_t)userStack + 16;
+
+	// copy the signal frame data onto the user stack
+	status_t error = user_memcpy((void*)dataAddress, signalFrameData,
+		sizeof(*signalFrameData));
+	if (error != B_OK)
+		return error;
+
+	// write a stack back chain pointing at the interrupted frame, so a stack
+	// walk through the signal handler terminates cleanly
+	uint32 backChain = frame->r1;
+	error = user_memcpy(userStack, &backChain, sizeof(backChain));
+	if (error != B_OK)
+		return error;
+
+	// look up the commpage signal handler trampoline
+	addr_t commpageAddress = (addr_t)thread->team->commpage_address;
+	addr_t handlerAddress
+		= ((addr_t*)commpageAddress)[COMMPAGE_ENTRY_PPC_SIGNAL_HANDLER]
+			+ commpageAddress;
+
+	// redirect the thread into the trampoline: r3 = &signal_frame_data,
+	// r1 = new stack, pc = trampoline
+	frame->r1 = (addr_t)userStack;
+	frame->r3 = dataAddress;
+	frame->srr0 = handlerAddress;
+	frame->lr = handlerAddress;
+
+	return B_OK;
 }
 
 
 int64
 arch_restore_signal_frame(struct signal_frame_data* signalFrameData)
 {
-	return 0;
+	struct iframe* frame = ppc_get_user_iframe();
+	if (frame == NULL) {
+		panic("arch_restore_signal_frame(): No user iframe!");
+		return 0;
+	}
+
+	mcontext_t& regs = signalFrameData->context.uc_mcontext;
+	frame->srr0 = regs.pc;
+	frame->r0 = regs.r0;
+	frame->r1 = regs.r1;
+	frame->r2 = regs.r2;
+	frame->r3 = regs.r3;
+	frame->r4 = regs.r4;
+	frame->r5 = regs.r5;
+	frame->r6 = regs.r6;
+	frame->r7 = regs.r7;
+	frame->r8 = regs.r8;
+	frame->r9 = regs.r9;
+	frame->r10 = regs.r10;
+	frame->r11 = regs.r11;
+	frame->r12 = regs.r12;
+	frame->f0 = regs.f0;
+	frame->f1 = regs.f1;
+	frame->f2 = regs.f2;
+	frame->f3 = regs.f3;
+	frame->f4 = regs.f4;
+	frame->f5 = regs.f5;
+	frame->f6 = regs.f6;
+	frame->f7 = regs.f7;
+	frame->f8 = regs.f8;
+	frame->f9 = regs.f9;
+	frame->f10 = regs.f10;
+	frame->f11 = regs.f11;
+	frame->f12 = regs.f12;
+	frame->f13 = regs.f13;
+	frame->fpscr = regs.fpscr;
+	frame->ctr = regs.ctr;
+	frame->xer = regs.xer;
+	frame->cr = regs.cr;
+	frame->lr = regs.lr;
+		// note: srr1 (MSR) is deliberately NOT restored from the
+		// user-supplied context - the current iframe already holds a
+		// valid user-mode MSR and importing an arbitrary one would let a
+		// signal handler escalate privilege.
+	return frame->r3;
 }
 
 
