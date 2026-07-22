@@ -107,6 +107,67 @@ video_blit_image(addr_t frameBuffer, const uint8 *data,
 
 
 extern "C" status_t
+video_prepare_boot_splash(void)
+{
+	// Decompress the boot-progress icons into gKernelArgs.boot_splash and set
+	// the palette, WITHOUT touching the frame buffer. This is the part of
+	// video_display_splash() that platforms whose loader cannot safely write
+	// the raw frame buffer (e.g. ppc/OpenFirmware, where the frame buffer is
+	// not mapped into the loader's address space) still need: the kernel's
+	// boot_splash_set_stage() then draws the icons from gKernelArgs.boot_splash
+	// using its own frame-buffer mapping.
+	if (!gKernelArgs.frame_buffer.enabled)
+		return B_NO_INIT;
+
+	unsigned int uncompressedSize = kSplashIconsWidth * kSplashIconsHeight;
+	switch (gKernelArgs.frame_buffer.depth) {
+		case 8:
+		{
+			platform_set_palette(k8BitPalette);
+
+			unsigned int logoSize = kSplashLogoWidth * kSplashLogoHeight;
+			gKernelArgs.boot_splash_logo
+				= (uint8*)kernel_args_malloc(logoSize);
+			if (gKernelArgs.boot_splash_logo != NULL) {
+				uncompress(kSplashLogo8BitCompressedImage,
+					sizeof(kSplashLogo8BitCompressedImage),
+					gKernelArgs.boot_splash_logo, logoSize);
+			}
+
+			gKernelArgs.boot_splash
+				= (uint8*)kernel_args_malloc(uncompressedSize);
+			if (gKernelArgs.boot_splash == NULL)
+				return B_NO_MEMORY;
+			return uncompress(kSplashIcons8BitCompressedImage,
+				sizeof(kSplashIcons8BitCompressedImage),
+				gKernelArgs.boot_splash, uncompressedSize);
+		}
+
+		default:	// 24 bits assumed
+		{
+			unsigned int logoSize = kSplashLogoWidth * kSplashLogoHeight * 3;
+			gKernelArgs.boot_splash_logo
+				= (uint8*)kernel_args_malloc(logoSize);
+			if (gKernelArgs.boot_splash_logo != NULL) {
+				uncompress(kSplashLogo24BitCompressedImage,
+					sizeof(kSplashLogo24BitCompressedImage),
+					gKernelArgs.boot_splash_logo, logoSize);
+			}
+
+			uncompressedSize *= 3;
+			gKernelArgs.boot_splash
+				= (uint8*)kernel_args_malloc(uncompressedSize);
+			if (gKernelArgs.boot_splash == NULL)
+				return B_NO_MEMORY;
+			return uncompress(kSplashIcons24BitCompressedImage,
+				sizeof(kSplashIcons24BitCompressedImage),
+				gKernelArgs.boot_splash, uncompressedSize);
+		}
+	}
+}
+
+
+extern "C" status_t
 video_display_splash(addr_t frameBuffer)
 {
 	if (!gKernelArgs.frame_buffer.enabled)

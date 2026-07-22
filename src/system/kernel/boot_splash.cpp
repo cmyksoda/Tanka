@@ -42,7 +42,7 @@ static uint8 *sUncompressedIcons;
 
 
 void
-boot_splash_init(uint8 *bootSplash)
+boot_splash_init(uint8 *bootSplash, uint8 *bootSplashLogo)
 {
 	TRACE("boot_splash_init: enter\n");
 
@@ -53,6 +53,64 @@ boot_splash_init(uint8 *bootSplash)
 		NULL);
 
 	sUncompressedIcons = bootSplash;
+
+	if (sInfo == NULL)
+		return;
+
+
+	// Clear the frame buffer (removing leftover boot-loader text), draw the
+	// Haiku logo, and draw the initial grayed-out icons. As boot proceeds,
+	// boot_splash_set_stage() colours the icons in stage by stage. The boot
+	// loader normally does the clear/logo/gray-icons in video_display_splash(),
+	// but platforms whose loader cannot write the frame buffer (ppc/OpenFirmware)
+	// leave it to the kernel here.
+	memset((void*)sInfo->frame_buffer, 0,
+		(size_t)sInfo->bytes_per_row * sInfo->height);
+
+	int width, height, x, y;
+
+	if (bootSplashLogo != NULL) {
+		compute_splash_logo_placement(sInfo->width, sInfo->height,
+			width, height, x, y);
+
+		BlitParameters params;
+		params.from = bootSplashLogo;
+		params.fromWidth = kSplashLogoWidth;
+		params.fromLeft = 0;
+		params.fromTop = 0;
+		params.fromRight = width;
+		params.fromBottom = height;
+		params.to = (uint8*)sInfo->frame_buffer;
+		params.toBytesPerRow = sInfo->bytes_per_row;
+		params.toLeft = x;
+		params.toTop = y;
+
+		blit(params, sInfo->depth);
+	}
+
+	// initial grayed-out icons: the lower half of the icons image
+	if (sUncompressedIcons != NULL) {
+		const uint16 iconsHalfHeight = kSplashIconsHeight / 2;
+		const int bytesPerPixel = sInfo->depth == 8 ? 1 : 3;
+
+		compute_splash_icons_placement(sInfo->width, sInfo->height,
+			width, height, x, y);
+
+		BlitParameters params;
+		params.from = sUncompressedIcons
+			+ (size_t)kSplashIconsWidth * iconsHalfHeight * bytesPerPixel;
+		params.fromWidth = kSplashIconsWidth;
+		params.fromLeft = 0;
+		params.fromTop = 0;
+		params.fromRight = width;
+		params.fromBottom = height;
+		params.to = (uint8*)sInfo->frame_buffer;
+		params.toBytesPerRow = sInfo->bytes_per_row;
+		params.toLeft = x;
+		params.toTop = y;
+
+		blit(params, sInfo->depth);
+	}
 }
 
 

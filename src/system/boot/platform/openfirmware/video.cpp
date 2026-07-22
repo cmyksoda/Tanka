@@ -97,13 +97,13 @@ platform_switch_to_logo(void)
 
 	gKernelArgs.frame_buffer.enabled = true;
 
-	// Skip video_display_splash(): drawing the boot logo through OpenFirmware
-	// faults under some firmwares (QEMU/OpenBIOS) and is purely cosmetic. The
-	// framebuffer itself is enabled above - which is what app_server needs -
-	// and the kernel debug console still reaches serial via InitSerialDebug().
-	// (The framebuffer memory is identity-mapped already if the splash draw is
-	// ever restored.)
-	//video_display_splash(gKernelArgs.frame_buffer.physical_buffer.start);
+	// Don't call video_display_splash(): it clears and blits the raw frame
+	// buffer, which is not mapped into the loader's address space here (writing
+	// it faults under OpenFirmware/QEMU). Instead just decompress the boot
+	// icons into gKernelArgs.boot_splash and set the palette; the kernel's
+	// boot_splash_set_stage() draws the boot-progress icons itself, using its
+	// own frame-buffer mapping.
+	video_prepare_boot_splash();
 }
 
 

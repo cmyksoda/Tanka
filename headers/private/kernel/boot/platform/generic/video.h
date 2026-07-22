@@ -33,6 +33,7 @@ void uncompress_8bit_RLE(const uint8 compressed[], uint8 *uncompressed);
 
 /* default splash display */
 status_t video_display_splash(addr_t frameBuffer);
+status_t video_prepare_boot_splash(void);
 
 /* video text console */
 class ConsoleNode* video_text_console_init(addr_t frameBuffer);

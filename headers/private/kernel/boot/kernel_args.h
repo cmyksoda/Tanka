@@ -108,6 +108,7 @@ typedef struct kernel_args {
 
 	// bootsplash data
 	FixedWidthPointer<uint8> boot_splash;
+	FixedWidthPointer<uint8> boot_splash_logo;
 
 	// optional microcode
 	FixedWidthPointer<void> ucode_data;

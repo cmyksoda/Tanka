@@ -28,7 +28,7 @@ enum {
 extern "C" {
 #endif
 
-void boot_splash_init(uint8 * boot_splash);
+void boot_splash_init(uint8 * boot_splash, uint8 * boot_splash_logo);
 void boot_splash_uninit(void);
 void boot_splash_set_stage(int stage);
 

@@ -313,7 +313,7 @@ main2(void* /*unused*/)
 	start_system_profiler(SYSTEM_PROFILE_SIZE, SYSTEM_PROFILE_STACK_DEPTH,
 		SYSTEM_PROFILE_INTERVAL);
 #endif
-	boot_splash_init(sKernelArgs.boot_splash);
+	boot_splash_init(sKernelArgs.boot_splash, sKernelArgs.boot_splash_logo);
 
 	commpage_init_post_cpus();
 #ifdef _COMPAT_MODE
