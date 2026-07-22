@@ -64,7 +64,7 @@ write_word32(addr_t P, Elf32_Word value)
 static inline bool
 write_low24_check(addr_t P, Elf32_Word value)
 {
-	if ((value & 0x3f000000) && (~value & 0x3f800000))
+	if ((value & 0x3f800000) && (~value & 0x3f800000))
 		return false;
 	*(Elf32_Word*)P = (*(Elf32_Word*)P & 0xfc000003)
 		| ((value & 0x00ffffff) << 2);
@@ -267,7 +267,7 @@ relocate_rela(image_t* rootImage, image_t* image, Elf32_Rela* rel,
 				// jump.
 				addr_t target = S + A;
 				addr_t jumpOffset = target - P;
-				if ((jumpOffset & 0xfc000000) != 0
+				if ((jumpOffset & 0xfe000000) != 0
 					&& (~jumpOffset & 0xfe000000) != 0) {
 					uint32* island = allocate_trampoline(image, pool,
 						image->pltrel_len / sizeof(Elf32_Rela) + 1);
@@ -285,7 +285,7 @@ relocate_rela(image_t* rootImage, image_t* image, Elf32_Rela* rel,
 						4 * sizeof(uint32));
 
 					jumpOffset = (addr_t)island - P;
-					if ((jumpOffset & 0xfc000000) != 0
+					if ((jumpOffset & 0xfe000000) != 0
 						&& (~jumpOffset & 0xfe000000) != 0) {
 						printf("R_PPC_JMP_SLOT: trampoline out of branch range "
 							"(offset %p)\n", (void*)jumpOffset);
