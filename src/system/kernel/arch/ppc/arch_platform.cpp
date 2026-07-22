@@ -121,10 +121,16 @@ PPCOpenFirmware::InitSerialDebug(struct kernel_args *kernelArgs)
 {
 	if (of_getprop(gChosen, "stdin", &fInput, sizeof(int)) == OF_FAILED)
 		return B_ERROR;
-	if (!kernelArgs->frame_buffer.enabled) {
-		if (of_getprop(gChosen, "stdout", &fOutput, sizeof(int)) == OF_FAILED)
-			return B_ERROR;
-	}
+	// Always take OpenFirmware's stdout for the kernel debug console, even when
+	// a framebuffer is enabled. When the firmware's output-device is a serial
+	// line (our dingusppc/QEMU setup uses output-device=scca) this yields
+	// kernel dprintf/panic/KDL over serial *and* a usable framebuffer for
+	// app_server at the same time. The old code only took stdout when the
+	// framebuffer was disabled, assuming stdout is always the screen - which is
+	// untrue whenever output-device points at a UART, and is exactly why a boot
+	// splash / framebuffer used to have to be disabled to get any serial log.
+	if (of_getprop(gChosen, "stdout", &fOutput, sizeof(int)) == OF_FAILED)
+		return B_ERROR;
 
 	return B_OK;
 }

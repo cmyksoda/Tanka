@@ -97,8 +97,13 @@ platform_switch_to_logo(void)
 
 	gKernelArgs.frame_buffer.enabled = true;
 
-	// the memory will be identity-mapped already
-	video_display_splash(gKernelArgs.frame_buffer.physical_buffer.start);
+	// Skip video_display_splash(): drawing the boot logo through OpenFirmware
+	// faults under some firmwares (QEMU/OpenBIOS) and is purely cosmetic. The
+	// framebuffer itself is enabled above - which is what app_server needs -
+	// and the kernel debug console still reaches serial via InitSerialDebug().
+	// (The framebuffer memory is identity-mapped already if the splash draw is
+	// ever restored.)
+	//video_display_splash(gKernelArgs.frame_buffer.physical_buffer.start);
 }
 
 
