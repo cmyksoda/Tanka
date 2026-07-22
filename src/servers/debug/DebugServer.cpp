@@ -850,10 +850,18 @@ TeamDebugHandler::_HandleMessage(DebugMessage *message)
 			break;
 	}
 
-	debug_printf("debug_server: Thread %" B_PRId32 " entered the debugger: %s\n",
-		thread, buffer);
+	debug_printf("debug_server: Thread %" B_PRId32 " (%s) entered the debugger: "
+		"%s\n", thread, fExecutablePath, buffer);
 
 	_PrintStackTrace(thread);
+
+	// Never recursively debug our own console helper. consoled is what we
+	// launch to present a crash on a system without app_server; if it crashes
+	// too (e.g. because it cannot open a console), trying to debug it would
+	// launch yet another consoled, and so on - an endless loop. Just let it
+	// die.
+	if (strcmp(_LastPathComponent(fExecutablePath), "consoled") == 0)
+		return kActionKillTeam;
 
 	int32 debugAction = kActionPromptUser;
 	bool explicitActionFound = false;
