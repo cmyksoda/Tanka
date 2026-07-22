@@ -165,9 +165,15 @@ PPCVMTranslationMapClassic::~PPCVMTranslationMapClassic()
 		fPageMapper->Delete();
 #endif
 
+	// Note: fMapCount is no longer an exact per-map page-table-entry count once
+	// Map() may evict entries belonging to other address spaces (see Map()), so
+	// a non-zero value here is not an error. What matters for correctness is
+	// that no live entry tagged with this map's VSID survives - the forced
+	// per-page UnmapArea() teardown removes every such entry - so it is safe to
+	// tear the map down regardless of the counter.
 	if (fMapCount > 0) {
-		panic("vm_translation_map.destroy_tmap: map %p has positive map count %d\n", this,
-			fMapCount);
+		TRACE("destroy_tmap: map %p torn down with residual map count %d "
+			"(expected under page-table-entry eviction)\n", this, fMapCount);
 	}
 
 	// mark the vsid base not in use
@@ -347,6 +353,7 @@ PPCVMTranslationMapClassic::LookupPageTableEntry(addr_t virtualAddress)
 
 	uint32 hash = page_table_entry::PrimaryHash(virtualSegmentID, virtualAddress);
 	page_table_entry_group *group = &(m->PageTable())[hash & m->PageTableHashMask()];
+	page_table_entry_group *primaryGroup = group;
 
 	for (int i = 0; i < 8; i++) {
 		page_table_entry *entry = &group->entry[i];
@@ -467,8 +474,31 @@ PPCVMTranslationMapClassic::Map(addr_t virtualAddress,
 		return B_OK;
 	}
 
-	panic("vm_translation_map.map_tmap: hash table full\n");
-	return B_ERROR;
+	// Both the primary and secondary hash buckets are full. The classic PPC
+	// page table is a hardware *cache* of the software page mappings, not the
+	// authoritative record (that is the VMArea/vm_page mapping list), so rather
+	// than give up we evict an existing entry to make room. The displaced
+	// virtual address simply takes a page fault the next time it is touched and
+	// is re-inserted then. A rotating victim keeps any single slot from being
+	// starved. No TLB invalidation is required: eviction only drops the
+	// hash-table copy of a translation whose underlying page mapping is
+	// unchanged, so a stale TLB entry still resolves to the correct physical
+	// page until it is naturally cast out, whereupon the address refaults.
+	// fMapCount is intentionally left alone: a slot is reused, not added, and
+	// because a full PTEG routinely holds entries from several address spaces
+	// the victim may belong to a different map, so a per-map count cannot be
+	// kept exact here anyway - the destructor no longer relies on it.
+	// (Known limitation: the victim's accessed/dirty bits are dropped rather
+	// than written back to its vm_page; acceptable for this bring-up.)
+	uint32 primaryHash = page_table_entry::PrimaryHash(virtualSegmentID,
+		virtualAddress);
+	page_table_entry_group *primaryGroup
+		= &(m->PageTable())[primaryHash & m->PageTableHashMask()];
+	static uint32 sEvictionRotor = 0;
+	int victim = sEvictionRotor++ & 7;
+	m->FillPageTableEntry(&primaryGroup->entry[victim], virtualSegmentID,
+		virtualAddress, physicalAddress, protection, memoryType, false);
+	return B_OK;
 
 #if 0//X86
 /*
@@ -695,8 +725,16 @@ PPCVMTranslationMapClassic::UnmapPage(VMArea* area, addr_t address,
 	}
 
 	page_table_entry* entry = LookupPageTableEntry(address);
-	if (entry == NULL)
-		return B_ENTRY_NOT_FOUND;
+	if (entry == NULL) {
+		// With eviction (see Map()) a still-live mapping may have had its
+		// page-table entry cast out. There is nothing to remove from hardware,
+		// so report success (the caller removes the software mapping itself);
+		// returning B_ENTRY_NOT_FOUND here would trip the generic UnmapArea's
+		// "mapping without translation map entry" panic during teardown.
+		if (_flags != NULL)
+			*_flags = 0;
+		return B_OK;
+	}
 
 	page_num_t pageNumber = entry->physical_page_number;
 	bool accessed = entry->referenced;

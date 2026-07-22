@@ -566,8 +566,15 @@ suggested_page_table_size(size_t total)
 		max++;
 	}
 
-	return 1UL << (max - 7);
-		// 2^(23 - 7) == 64 kB
+	// Give the hashed page table 4x the classic RAM/128 rule of thumb: a full
+	// multi-process Haiku desktop (launch_daemon + registrar + net_server +
+	// media_server + app_server + Tracker + ... each mapping libbe/libroot and
+	// their own heaps/stacks) overflows an individual PTEG at RAM/128, since
+	// Map() panics on a full PTEG rather than evicting. RAM/32 keeps every
+	// bucket comfortably below the 16-slot limit and stays within the PPC
+	// architectural 32 MB page-table ceiling.
+	return 1UL << (max - 5);
+		// RAM/32, capped by the PPC 32 MB page-table ceiling
 }
 
 
