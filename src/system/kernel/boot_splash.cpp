@@ -68,8 +68,13 @@ boot_splash_set_stage(int stage)
 {
 	TRACE("boot_splash_set_stage: stage=%d\n", stage);
 
-	if (sInfo == NULL || stage < 0 || stage >= BOOT_SPLASH_STAGE_MAX)
+	// sUncompressedIcons is NULL when the platform loader supplied no boot
+	// splash image (e.g. the ppc/OpenFirmware loader) - blitting from it would
+	// dereference NULL. Guard against it as well as a missing frame buffer.
+	if (sInfo == NULL || sUncompressedIcons == NULL || stage < 0
+			|| stage >= BOOT_SPLASH_STAGE_MAX) {
 		return;
+	}
 
 	int width, height, x, y;
 	compute_splash_icons_placement(sInfo->width, sInfo->height,
