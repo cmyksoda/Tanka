@@ -59,6 +59,10 @@ get_kernel_entry(void)
 }
 
 
+extern "C" void platform_load_system_palette(void);
+	// video.cpp
+
+
 extern "C" void
 platform_start_kernel(void)
 {
@@ -73,6 +77,11 @@ platform_start_kernel(void)
 	mmu_init_for_kernel();
 	smp_boot_other_cpus();
 	*/
+
+	// Last video act: leave the DAC holding Haiku's system color map so
+	// the 8-bit desktop renders with correct colors (nothing after OF can
+	// program the palette on this hardware).
+	platform_load_system_palette();
 
 	status_t error = arch_start_kernel(&gKernelArgs, kernelEntry, stackTop);
 

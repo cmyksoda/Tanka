@@ -1,6 +1,7 @@
 SubDir HAIKU_TOP src system boot platform openfirmware ;
 
 UsePrivateHeaders [ FDirName graphics common ] ;
+UsePrivateHeaders interface ;
 
 {
 	local defines = _BOOT_PLATFORM_OPENFIRMWARE ;

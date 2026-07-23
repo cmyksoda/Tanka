@@ -744,6 +744,30 @@ arch_mmu_allocate(void *_virtualAddress, size_t size, uint8 _protection,
 }
 
 
+extern "C" void *
+arch_mmu_map_device(void *physicalAddress, size_t size)
+{
+	// Map a physical device range (cache-inhibited + guarded) so the loader
+	// itself can program hardware registers. Prefers an identity mapping so
+	// the caller can reason in physical addresses.
+	size = ROUNDUP(size, B_PAGE_SIZE);
+
+	void *virtualAddress = physicalAddress;
+	if (is_virtual_allocated(virtualAddress, size)) {
+		virtualAddress = find_free_virtual_range(NULL, size);
+		if (virtualAddress == NULL)
+			return NULL;
+	}
+	if (insert_virtual_allocated_range((addr_t)virtualAddress, size) < B_OK)
+		return NULL;
+
+	map_range(virtualAddress, physicalAddress, size,
+		0x2a);
+			// caching inhibited, guarded, read/write
+	return virtualAddress;
+}
+
+
 extern "C" status_t
 arch_mmu_free(void *address, size_t size)
 {
