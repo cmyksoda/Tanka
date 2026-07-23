@@ -1,6 +1,9 @@
 /*
  * VIA-CUDA ADB input driver for PowerPC Macs (and dingusppc).
  *
+ * Copyright 2026, Sean Malseed.
+ * Distributed under the terms of the MIT License.
+ *
  * The Cuda MCU is an ADB/I2C/RTC/power microcontroller attached to a 6522 VIA
  * inside the mac-io chip. The host talks to Cuda by shifting bytes through the
  * VIA shift register (SR) with a three-wire handshake (TIP/BYTEACK/TREQ) in the
@@ -9,7 +12,7 @@
  * raw_key_info / mouse_movement events on /dev/input/{keyboard,mouse}/adb/0.
  *
  * Authors:
- *		Sean Malseed
+ *		Sean Malseed, actionretro@pm.me
  *		Claude (Anthropic), paired via Claude Code
  */
 

@@ -1,5 +1,5 @@
 /*
- * Copyright 2026, Haiku, Inc. All rights reserved.
+ * Copyright 2026, Sean Malseed.
  * Distributed under the terms of the MIT License.
  *
  * Authors:
