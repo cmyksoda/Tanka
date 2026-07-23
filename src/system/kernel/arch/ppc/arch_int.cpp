@@ -669,6 +669,21 @@ probe_pic_device(device_node *node, PICModuleList &picModules)
 status_t
 arch_int_init_post_device_manager(struct kernel_args *args)
 {
+	// PPC is the only arch that never reserved its I/O interrupt vectors, so
+	// every sVectors[] entry kept assigned_cpu == NULL. install_io_interrupt_
+	// handler() tolerates that (it only dereferences assigned_cpu for
+	// INTERRUPT_TYPE_IRQ vectors), but the per-interrupt load accounting in
+	// update_int_load() unconditionally does atomic_add(&assigned_cpu->load,
+	// ...) - a NULL deref (fault at 0x14, load's offset within irq_assignment)
+	// the moment a vector accrues measurable load. Rare/fast IRQs (ATA) never
+	// tripped it; a constantly-polling source (VIA-CUDA ADB autopoll) does
+	// immediately. Reserve the whole vector space as IRQ up front, exactly like
+	// the arm and riscv64 ports do in their controller init, so assigned_cpu is
+	// always valid. arch_int_assign_to_cpu() is a no-op on ppc, so the
+	// IRQ-balancing path this enables in install_io_interrupt_handler() simply
+	// pins every vector to CPU 0.
+	reserve_io_interrupt_vectors(NUM_IO_VECTORS, 0, INTERRUPT_TYPE_IRQ);
+
 	// get the interrupt controller driver modules
 	PICModuleList picModules;
 	get_interrupt_controller_modules(picModules);
