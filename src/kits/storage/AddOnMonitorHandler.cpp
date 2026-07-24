@@ -534,8 +534,17 @@ AddOnMonitorHandler::_HandlePendingEntries()
 			continue;
 		}
 
-		// stat units are seconds, real_time_clock units are seconds
-		if (real_time_clock() - st.st_mtime < ADD_ON_STABLE_SECONDS) {
+		// stat units are seconds, real_time_clock units are seconds.
+		// Only defer an entry whose modification time is in the recent past:
+		// that is the case this guards against, a file still being written.
+		// If the mtime is in the *future*, the clock disagrees with the file
+		// system rather than the file being unstable, and deferring would
+		// postpone the entry forever - which is exactly what happens on a
+		// machine whose real time clock reads earlier than the build, e.g.
+		// booting a freshly built image before the clock has been set. Treat
+		// a future mtime as stable.
+		time_t now = real_time_clock();
+		if (now >= st.st_mtime && now - st.st_mtime < ADD_ON_STABLE_SECONDS) {
 			// entry not stable, skip the entry for this pulse
 			iter++;
 			continue;
