@@ -68,8 +68,23 @@ remap_frame_buffer(framebuffer_info& info, addr_t physicalBase, uint32 width,
 	frame_buffer_update(frameBuffer, width, height, depth,
 		bytesPerRow);
 
-	vm_change_clones_to_null_areas(info.frame_buffer_area);
-	delete_area(info.frame_buffer_area);
+	// Only ever drop an area this driver created itself. The first remap
+	// inherits the boot frame buffer area, which belongs to the kernel frame
+	// buffer console (it is that console's own sConsole.area, handed to us
+	// through the FRAME_BUFFER_BOOT_INFO boot item) - deleting it leaves the
+	// console holding a dangling area id, and, worse, the console's drawing
+	// hooks read sConsole.frame_buffer without holding sConsole.lock, so an
+	// operation already in flight when we get here keeps writing through the
+	// old base. Since map_physical_memory() has just mapped the *same*
+	// physical frame buffer again, that stale base is entirely harmless as
+	// long as its area still exists - but if we delete it, the write lands in
+	// unmapped kernel space and takes an unrecoverable page fault. That was
+	// observed on ppc as a KDL panic in console_clear() whenever consoled
+	// opened /dev/console at the moment of this remap.
+	if (info.frame_buffer_area >= 0) {
+		vm_change_clones_to_null_areas(info.frame_buffer_area);
+		delete_area(info.frame_buffer_area);
+	}
 
 	info.frame_buffer = frameBuffer;
 	info.frame_buffer_area = area;
@@ -108,7 +123,11 @@ framebuffer_init(framebuffer_info& info)
 
 	memset(&sharedInfo, 0, sizeof(vesa_shared_info));
 
-	info.frame_buffer_area = bufferInfo->area;
+	// Note: bufferInfo->area is the kernel frame buffer console's own area,
+	// not ours to delete - see remap_frame_buffer(). Leave it out of
+	// info.frame_buffer_area so that the first remap keeps it alive; from
+	// then on info.frame_buffer_area is an area this driver created.
+	info.frame_buffer_area = -1;
 
 	remap_frame_buffer(info, bufferInfo->physical_frame_buffer,
 		bufferInfo->width, bufferInfo->height, bufferInfo->depth,
