@@ -112,10 +112,35 @@
 #define MAX_VSID_BASES (B_PAGE_SIZE * 8)
 static uint32 sVSIDBaseBitmap[MAX_VSID_BASES / (sizeof(uint32) * 8)];
 static spinlock sVSIDBaseBitmapLock;
-// The kernel map's VSID base, cached for the eviction code below. The
-// kernel owns the 16 VSIDs [sKernelVSIDBase, sKernelVSIDBase + 15]
-// (all 16 segments); user maps get non-overlapping bases.
-static uint32 sKernelVSIDBase = 0;
+// The VSIDs the kernel's 16 segment registers actually hold, captured for the
+// eviction code below. These are *not* a contiguous range starting at the
+// kernel map's fVSIDBase: the boot loader preserves whatever arbitrary,
+// non-linear VSID Open Firmware assigned to each segment (see
+// vsid_for_address() below), so recognising a kernel page table entry means
+// testing membership in this set, not a range check against segment 0's value.
+static uint32 sKernelVSIDs[16];
+static bool sKernelVSIDsKnown = false;
+
+
+/*!	Returns whether \a vsid belongs to the kernel address space.
+
+	Only meaningful once the kernel translation map has been initialised;
+	before that everything mapped is the kernel's, so the conservative answer
+	is also the correct one.
+*/
+static inline bool
+is_kernel_vsid(uint32 vsid)
+{
+	if (!sKernelVSIDsKnown)
+		return true;
+
+	for (int i = 0; i < 16; i++) {
+		if (sKernelVSIDs[i] == vsid)
+			return true;
+	}
+
+	return false;
+}
 
 #define VSID_BASE_SHIFT 3
 #define VADDR_TO_VSID(vsidBase, vaddr) (vsidBase + ((vaddr) >> 28))
@@ -241,7 +266,14 @@ PPCVMTranslationMapClassic::Init(bool kernel)
 		// mapping happened to already cover that virtual range instead.
 		// Query the real, current value instead of assuming it.
 		fVSIDBase = get_sr((void*)0) & 0xffffff;
-		sKernelVSIDBase = fVSIDBase;
+
+		// Record every kernel segment's real VSID, so the page table
+		// eviction code can tell a kernel entry from a user one. They are
+		// firmware-assigned and need not be contiguous, so all 16 are read
+		// rather than derived from segment 0's.
+		for (int i = 0; i < 16; i++)
+			sKernelVSIDs[i] = get_sr((void*)((addr_t)i << 28)) & 0xffffff;
+		sKernelVSIDsKnown = true;
 
 		// Two VSID bases are reserved for the kernel, spanning it: the
 		// kernel's fVSIDBase covers all 16 segments (this translation map
@@ -412,6 +444,30 @@ PPCVMTranslationMapClassic::MaxPagesNeededToMap(addr_t start, addr_t end) const
 }
 
 
+// PPC keeps the instruction and data caches incoherent, and the classic page
+// table has no per-page execute bit, so a page that is demand-paged in as data
+// and then executed (all user code: runtime_loader and everything it loads)
+// would run whatever stale bytes happen to be in the I-cache -- the executable
+// loads fine on the cache-coherent emulator but crashes on real PPC hardware.
+// Sync the page's caches when we insert an executable mapping. icbi/dcbst take
+// effective addresses, so this is only valid while the freshly inserted
+// translation is reachable in the active MMU context -- i.e. this map is active
+// on the current CPU, which is exactly the case for a user demand-paging fault
+// (the faulting thread runs in this very address space). Mappings made into a
+// non-current address space are skipped; those pages are synced when they first
+// fault in the context that actually runs them.
+static void
+ppc_sync_executable_mapping(PPCVMTranslationMapClassic* map,
+	addr_t virtualAddress, uint32 attributes)
+{
+	if ((attributes & B_EXECUTE_AREA) == 0)
+		return;
+	if (!map->PagingStructures()->active_on_cpus.GetBit(smp_get_current_cpu()))
+		return;
+	arch_cpu_sync_icache((void*)virtualAddress, B_PAGE_SIZE);
+}
+
+
 status_t
 PPCVMTranslationMapClassic::Map(addr_t virtualAddress,
 	phys_addr_t physicalAddress, uint32 attributes,
@@ -459,6 +515,7 @@ PPCVMTranslationMapClassic::Map(addr_t virtualAddress,
 		m->FillPageTableEntry(entry, virtualSegmentID, virtualAddress,
 			physicalAddress, protection, memoryType, false);
 		fMapCount++;
+		ppc_sync_executable_mapping(this, virtualAddress, attributes);
 		return B_OK;
 	}
 
@@ -476,6 +533,7 @@ PPCVMTranslationMapClassic::Map(addr_t virtualAddress,
 		m->FillPageTableEntry(entry, virtualSegmentID, virtualAddress,
 			physicalAddress, protection, memoryType, false);
 		fMapCount++;
+		ppc_sync_executable_mapping(this, virtualAddress, attributes);
 		return B_OK;
 	}
 
@@ -495,32 +553,71 @@ PPCVMTranslationMapClassic::Map(addr_t virtualAddress,
 	// kept exact here anyway - the destructor no longer relies on it.
 	// (Known limitation: the victim's accessed/dirty bits are dropped rather
 	// than written back to its vm_page; acceptable for this bring-up.)
+	//
+	// "It simply refaults" is only true for some entries, though, and the two
+	// exceptions below must never be chosen as a victim:
+	//
+	// - A kernel mapping. It may be touched again with interrupts disabled
+	//   (e.g. inside a page-queue critical section), where a fault cannot be
+	//   serviced and panics instead ("page fault, but interrupts were
+	//   disabled").
+	// - A mapping of a wired page. The refault goes through map_page(), which
+	//   for a wired area has no way to tell a refault from a first mapping and
+	//   so increments the page's wired count a *second* time. The count then
+	//   never falls back to zero, the page looks mapped forever, and tearing
+	//   its cache down panics with "page still has mappings".
+	//
+	// Anything else may be dropped: a B_NO_LOCK mapping refaults harmlessly,
+	// because map_page() recognises the still-live software mapping and only
+	// re-inserts the page table entry (see the __POWERPC__ branch there).
 	uint32 primaryHash = page_table_entry::PrimaryHash(virtualSegmentID,
 		virtualAddress);
-	page_table_entry_group *primaryGroup
-		= &(m->PageTable())[primaryHash & m->PageTableHashMask()];
-	// Choose the victim carefully: never evict a kernel mapping. A user
-	// mapping simply refaults the next time it is touched, but a kernel
-	// translation may be accessed again with interrupts disabled (e.g.
-	// inside a page-queue critical section), where a fault cannot be
-	// serviced and instead panics ("page fault, but interrupts were
-	// disabled"). Prefer a user-owned entry; only if the whole group is
-	// kernel-owned do we fall back to the rotor.
+	page_table_entry_group *victimGroups[2];
+	victimGroups[0] = &(m->PageTable())[primaryHash & m->PageTableHashMask()];
+	victimGroups[1] = &(m->PageTable())[page_table_entry::SecondaryHash(
+		primaryHash) & m->PageTableHashMask()];
+
 	static uint32 sEvictionRotor = 0;
+	int victimGroup = -1;
 	int victim = -1;
-	for (int i = 0; i < 8; i++) {
-		int slot = (sEvictionRotor + i) & 7;
-		uint32 vsid = primaryGroup->entry[slot].virtual_segment_id;
-		if (vsid < sKernelVSIDBase || vsid > sKernelVSIDBase + 15) {
+	for (int g = 0; g < 2 && victim < 0; g++) {
+		for (int i = 0; i < 8; i++) {
+			int slot = (sEvictionRotor + i) & 7;
+			page_table_entry* candidate = &victimGroups[g]->entry[slot];
+
+			if (is_kernel_vsid(candidate->virtual_segment_id))
+				continue;
+
+			vm_page* page = vm_lookup_page(candidate->physical_page_number);
+			if (page != NULL && page->WiredCount() > 0)
+				continue;
+
+			victimGroup = g;
 			victim = slot;
 			break;
 		}
 	}
-	if (victim < 0)
+	if (victim < 0) {
+		// Every slot in both buckets is kernel-owned or wired. Dropping one is
+		// wrong whichever we pick, but refusing to map is worse (Map()'s
+		// callers do not handle failure), so fall back to the rotor and make
+		// the situation visible instead of silent.
+		static bool sEvictionFallbackWarned = false;
+		if (!sEvictionFallbackWarned) {
+			sEvictionFallbackWarned = true;
+			dprintf("PPCVMTranslationMapClassic::Map(): page table group for "
+				"va %#" B_PRIxADDR " holds only kernel/wired entries - "
+				"evicting one anyway\n", virtualAddress);
+		}
+		victimGroup = 0;
 		victim = sEvictionRotor & 7;
+	}
 	sEvictionRotor++;
-	m->FillPageTableEntry(&primaryGroup->entry[victim], virtualSegmentID,
-		virtualAddress, physicalAddress, protection, memoryType, false);
+
+	m->FillPageTableEntry(&victimGroups[victimGroup]->entry[victim],
+		virtualSegmentID, virtualAddress, physicalAddress, protection,
+		memoryType, victimGroup == 1);
+	ppc_sync_executable_mapping(this, virtualAddress, attributes);
 	return B_OK;
 
 #if 0//X86
@@ -862,9 +959,17 @@ PPCVMTranslationMapClassic::UnmapArea(VMArea* area, bool deletingAddressSpace,
 	// clearing ignoreTopCachePageFlags: every entry is then removed (with a
 	// correct tlbie for its real effective address) and fMapCount is driven
 	// to zero, so the map is genuinely empty by the time it is destroyed.
-	// This is always safe because Map() never evicts - it panics on a full
-	// PTEG rather than dropping an entry - so every live mapping is guaranteed
-	// to have a findable page-table entry here (no spurious B_ENTRY_NOT_FOUND).
+	// NOTE: Map() DOES evict - when both hash buckets are full it drops an
+	// existing user entry to make room (it only refuses to evict kernel
+	// mappings). So a still-live user mapping can have no page-table entry
+	// here, and UnmapPage() reports B_OK for that case rather than
+	// B_ENTRY_NOT_FOUND. Beware: the address-walking UnmapPages() path, which
+	// the generic UnmapArea uses for wired areas, simply skips such an address
+	// and therefore leaks the software vm_page_mapping - the cause of the
+	// "page still has mappings" panic in VMCache::Delete. Fixing that by
+	// walking the mapping list here was tried and did NOT resolve the panic
+	// (it also occurs for kernel areas, which are never evicted), so a second
+	// cause remains unidentified.
 	VMTranslationMap::UnmapArea(area, deletingAddressSpace, false);
 }
 
