@@ -553,6 +553,22 @@ BAppFileInfo::SetIcon(const uint8* data, size_t size)
 }
 
 
+//! Byte-swaps the integer fields of a version_info between host and on-disk
+//	(little-endian) order. The two char arrays need no conversion. Swapping is
+//	its own inverse, so this serves both reading and writing, and it is a no-op
+//	on little-endian hosts. See the note in GetAppFlags() for why the on-disk
+//	data is little-endian.
+static void
+swap_version_info_endian(version_info& info)
+{
+	info.major = B_LENDIAN_TO_HOST_INT32(info.major);
+	info.middle = B_LENDIAN_TO_HOST_INT32(info.middle);
+	info.minor = B_LENDIAN_TO_HOST_INT32(info.minor);
+	info.variety = B_LENDIAN_TO_HOST_INT32(info.variety);
+	info.internal = B_LENDIAN_TO_HOST_INT32(info.internal);
+}
+
+
 status_t
 BAppFileInfo::GetVersionInfo(version_info* info, version_kind kind) const
 {
@@ -594,6 +610,10 @@ BAppFileInfo::GetVersionInfo(version_info* info, version_kind kind) const
 		*info = infos[index];
 	} else
 		return B_ERROR;
+
+	// The integer fields are stored little-endian by the build tools and are
+	// read back verbatim; convert them to host order (no-op on little-endian).
+	swap_version_info_endian(*info);
 
 	// return result
 	return B_OK;
@@ -640,6 +660,11 @@ BAppFileInfo::SetVersionInfo(const version_info* info, version_kind kind)
 				}
 			}
 			infos[index] = *info;
+			// Store the just-set entry little-endian, to match the on-disk
+			// order the build tools use and GetVersionInfo() reads back. The
+			// other entry was read back verbatim and is left as-is. No-op on
+			// little-endian hosts.
+			swap_version_info_endian(infos[index]);
 			// write the data
 			if (error == B_OK) {
 				error = _WriteData(kVersionInfoAttribute,
