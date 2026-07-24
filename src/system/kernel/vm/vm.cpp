@@ -655,6 +655,43 @@ map_page(VMArea* area, vm_page* page, addr_t address, uint32 protection,
 	if (area->wiring == B_NO_LOCK) {
 		DEBUG_PAGE_ACCESS_CHECK(page);
 
+#ifdef __POWERPC__
+		// On the classic PowerPC MMU the hashed page table is a *cache* of the
+		// software page mappings, not the authoritative record: when a page
+		// table group fills up, the translation map evicts a live entry, and
+		// the displaced address is simply refaulted and re-inserted here. So
+		// unlike on every other architecture, map_page() can be called for a
+		// mapping that already exists (the fault handler's Query() reports the
+		// evicted entry as not present). Recording it a second time would be
+		// fatal: PageUnmapped() removes only the first mapping matching the
+		// area, so the duplicate is never freed, the page stays "mapped"
+		// forever, and destroying its cache panics with "page still has
+		// mappings". Re-establish the page table entry only.
+		if (page->IsMapped()) {
+			// page->mappings is modified under the translation map lock, so
+			// the search has to hold it too.
+			map->Lock();
+
+			bool alreadyMapped = false;
+			for (vm_page_mappings::Iterator it = page->mappings.GetIterator();
+					vm_page_mapping* existing = it.Next();) {
+				if (existing->area == area) {
+					alreadyMapped = true;
+					break;
+				}
+			}
+
+			if (alreadyMapped) {
+				map->Map(address, page->physical_page_number * B_PAGE_SIZE,
+					protection, area->MemoryType(), reservation);
+				map->Unlock();
+				return B_OK;
+			}
+
+			map->Unlock();
+		}
+#endif
+
 		bool isKernelSpace = area->address_space == VMAddressSpace::Kernel();
 		vm_page_mapping* mapping = allocate_page_mapping(page->physical_page_number,
 			CACHE_DONT_WAIT_FOR_MEMORY
