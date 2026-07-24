@@ -14,6 +14,7 @@
 
 #include <AppFileInfo.h>
 #include <Bitmap.h>
+#include <ByteOrder.h>
 #include <File.h>
 #include <fs_attr.h>
 #include <IconUtils.h>
@@ -309,6 +310,18 @@ BAppFileInfo::GetAppFlags(uint32* flags) const
 	// check the read data
 	if (error == B_OK && read != sizeof(uint32))
 		error = B_ERROR;
+	if (error == B_OK) {
+		// The app flags are produced by the build tools and stored verbatim:
+		// resattr copies the resource bytes into the BEOS:APP_FLAGS attribute,
+		// and neither the attribute read nor swap_data() (which does not
+		// recognise the 'APPF' type) byte-swaps them, so the value is always
+		// on disk in the byte order of the machine that built it - little
+		// endian for the current toolchain. On a big-endian system it must be
+		// converted, or a flag such as B_BACKGROUND_APP (0x4) reads as
+		// 0x04000000 and is lost (e.g. the Deskbar would then list background
+		// servers). A no-op on little-endian hosts.
+		*flags = B_LENDIAN_TO_HOST_INT32(*flags);
+	}
 	return error;
 }
 
@@ -321,9 +334,13 @@ BAppFileInfo::SetAppFlags(uint32 flags)
 	if (InitCheck() != B_OK)
 		error = B_NO_INIT;
 	if (error == B_OK) {
+		// Store little-endian, matching how the build tools write app flags
+		// and what GetAppFlags() reads back (see the note there). A no-op on
+		// little-endian hosts.
+		uint32 leFlags = B_HOST_TO_LENDIAN_INT32(flags);
 		// write the data
 		error = _WriteData(kAppFlagsAttribute, kAppFlagsResourceID,
-			B_APP_FLAGS_TYPE, &flags, sizeof(uint32));
+			B_APP_FLAGS_TYPE, &leFlags, sizeof(uint32));
 	}
 	return error;
 }
