@@ -860,15 +860,35 @@ PPCVMTranslationMapClassic::UnmapPage(VMArea* area, addr_t address,
 	bool accessed = entry->referenced;
 	bool modified = entry->changed;
 
+	// The hardware entry can be a stale cache copy that names a page whose
+	// software mapping in this area was already removed (see UnmapPages() and
+	// Map()). Only account it to PageUnmapped() when it is genuine, or its
+	// "mapping != NULL" assert fires. A wired area has no mapping objects
+	// (PageUnmapped() uses DecrementWiredCount()), so it always counts.
+	bool genuine = area->wiring != B_NO_LOCK;
+	if (!genuine) {
+		vm_page* ptePage = vm_lookup_page(pageNumber);
+		if (ptePage != NULL) {
+			vm_page_mappings::Iterator it = ptePage->mappings.GetIterator();
+			while (vm_page_mapping* m = it.Next()) {
+				if (m->area == area) { genuine = true; break; }
+			}
+		}
+	}
+
 	RemovePageTableEntry(address);
 
 	fMapCount--;
 
 	if (_flags == NULL) {
-		locker.Detach();
-			// PageUnmapped() will unlock for us
+		if (genuine) {
+			locker.Detach();
+				// PageUnmapped() will unlock for us
 
-		PageUnmapped(area, pageNumber, accessed, modified, updatePageQueue);
+			PageUnmapped(area, pageNumber, accessed, modified, updatePageQueue);
+		}
+		// else: stale entry cleared above; nothing for PageUnmapped() to
+		// remove. The RecursiveLocker unlocks normally on return.
 	} else {
 		uint32 flags = PAGE_PRESENT;
 		if (accessed)
@@ -1017,12 +1037,38 @@ PPCVMTranslationMapClassic::UnmapPages(VMArea* area, addr_t base, size_t size,
 		bool accessed = entry->referenced;
 		bool modified = entry->changed;
 
-		RemovePageTableEntry(address);
+		// The classic PPC page table is a *cache* of the software page
+		// mappings (see Map()), not the authoritative record, so a present
+		// hardware entry can be stale: it may name a page whose software
+		// mapping in this area was already removed. Handing such a page to
+		// PageUnmapped() would trip its "mapping != NULL" assert. Account the
+		// page only when it is genuinely mapped here:
+		//  - A wired area carries no vm_page_mapping objects (it uses
+		//    wired_count); PageUnmapped() handles it via DecrementWiredCount()
+		//    and must always run.
+		//  - Otherwise the page must have a mapping for this area.
+		// A stale entry (verified over many boots to always name a page with
+		// an empty mapping list) is simply cleared below; nothing is leaked,
+		// because a live mapping at this address would have kept the entry
+		// pointing at its own page rather than this stale one.
+		bool genuine = area->wiring != B_NO_LOCK;
+		if (!genuine) {
+			vm_page* ptePage = vm_lookup_page(pageNumber);
+			if (ptePage != NULL) {
+				vm_page_mappings::Iterator it = ptePage->mappings.GetIterator();
+				while (vm_page_mapping* m = it.Next()) {
+					if (m->area == area) { genuine = true; break; }
+				}
+			}
+		}
 
+		RemovePageTableEntry(address);
 		fMapCount--;
 
-		PageUnmapped(area, pageNumber, accessed, modified, updatePageQueue,
-			&queue);
+		if (genuine) {
+			PageUnmapped(area, pageNumber, accessed, modified, updatePageQueue,
+				&queue);
+		}
 	}
 
 	locker.Unlock();
