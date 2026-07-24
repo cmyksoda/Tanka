@@ -63,8 +63,16 @@ BTimeUnitFormat::BTimeUnitFormat(const time_unit_style style)
 		return;
 	}
 
-	if (!U_SUCCESS(icuStatus))
+	if (!U_SUCCESS(icuStatus)) {
+		// ICU can fail to build the formatter (for example when the unit
+		// pattern data is missing) and still hand back an object. That object
+		// is only half-initialized and calling format() on it faults inside
+		// ICU, so drop it here and report the failure. Format() bails on a
+		// NULL fFormatter, so this turns the crash into a clean error.
+		delete fFormatter;
+		fFormatter = NULL;
 		fInitStatus = B_ERROR;
+	}
 }
 
 
@@ -88,8 +96,16 @@ BTimeUnitFormat::BTimeUnitFormat(const BLanguage& language,
 		return;
 	}
 
-	if (!U_SUCCESS(icuStatus))
+	if (!U_SUCCESS(icuStatus)) {
+		// ICU can fail to build the formatter (for example when the unit
+		// pattern data is missing) and still hand back an object. That object
+		// is only half-initialized and calling format() on it faults inside
+		// ICU, so drop it here and report the failure. Format() bails on a
+		// NULL fFormatter, so this turns the crash into a clean error.
+		delete fFormatter;
+		fFormatter = NULL;
 		fInitStatus = B_ERROR;
+	}
 }
 
 

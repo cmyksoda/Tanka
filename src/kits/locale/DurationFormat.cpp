@@ -51,6 +51,16 @@ BDurationFormat::BDurationFormat(const BLanguage& language,
 		fInitStatus = B_NO_MEMORY;
 		return;
 	}
+	if (U_FAILURE(icuStatus)) {
+		// ICU can fail to set the calendar up (for example when the timezone
+		// data is missing) and still hand back an object. That object is only
+		// half-initialized and using it faults inside ICU, so drop it here and
+		// report the failure rather than let a caller trip over it later.
+		delete fCalendar;
+		fCalendar = NULL;
+		fInitStatus = B_ERROR;
+		return;
+	}
 }
 
 
@@ -65,6 +75,16 @@ BDurationFormat::BDurationFormat(const BString& separator,
 	fCalendar = new GregorianCalendar(icuStatus);
 	if (fCalendar == NULL) {
 		fInitStatus = B_NO_MEMORY;
+		return;
+	}
+	if (U_FAILURE(icuStatus)) {
+		// ICU can fail to set the calendar up (for example when the timezone
+		// data is missing) and still hand back an object. That object is only
+		// half-initialized and using it faults inside ICU, so drop it here and
+		// report the failure rather than let a caller trip over it later.
+		delete fCalendar;
+		fCalendar = NULL;
+		fInitStatus = B_ERROR;
 		return;
 	}
 }
@@ -125,6 +145,9 @@ status_t
 BDurationFormat::Format(BString& buffer, const bigtime_t startValue,
 	const bigtime_t stopValue) const
 {
+	if (fCalendar == NULL)
+		return B_NO_INIT;
+
 	UErrorCode icuStatus = U_ZERO_ERROR;
 	fCalendar->setTime((UDate)startValue / 1000, icuStatus);
 	if (!U_SUCCESS(icuStatus))
