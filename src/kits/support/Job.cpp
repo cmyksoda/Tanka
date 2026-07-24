@@ -69,6 +69,28 @@ BJob::BJob(const BString& title)
 
 BJob::~BJob()
 {
+	// Ownership safety: the JobQueue deletes dependant jobs when a job fails
+	// (JobQueue::_RemoveDependantJobsOf -> "delete dependantJob") without any
+	// global bookkeeping of the dependency graph - see the "we need some sort
+	// of ownership management" TODO there. With an empty destructor, a job that
+	// other jobs still depended on stayed listed in their fDependantJobs even
+	// after being freed; a later JobQueue::JobSucceeded() ->
+	// _RequeueDependantJobsOf() then dereferenced the dangling pointer (via
+	// DependantJobAt()->RemoveDependency()) and crashed in BList::IndexOf,
+	// reading the freed job's storage back as the 0xFFFFFFFF ticket sentinel.
+	//
+	// Sever the cross-links here: for every job this one depends on, drop this
+	// from that job's dependant list. The dependency invariant is symmetric
+	// (A.fDependencies has B  <=>  B.fDependantJobs has A), so this covers
+	// every list that could still be holding a soon-to-dangle pointer. Only
+	// fDependantJobs items are ever dereferenced, so the mirror direction needs
+	// no cleanup - and skipping it means we never touch a queued job's
+	// dependency count, keeping the JobQueue's ordered set invariant intact.
+	for (int32 i = fDependencies.CountItems() - 1; i >= 0; i--) {
+		BJob* dependency = fDependencies.ItemAt(i);
+		if (dependency != NULL)
+			dependency->fDependantJobs.RemoveItem(this);
+	}
 }
 
 
