@@ -199,7 +199,9 @@ rule HaikuImageGetSystemLibs
 			libdebug.so
 			libdebugger.so@primary
 			libdevice.so
+			libgame.so
 			libgnu.so
+			libmedia.so
 			libnetwork.so
 			libpackage.so
 			libtextencoding.so
@@ -227,6 +229,8 @@ SYSTEM_SERVERS = [ FFilterByBuildFeatures
 	input_server
 	keystore_server
 	launch_daemon
+	media_addon_server
+	media_server
 	mount_server
 	net_server
 	notification_server
@@ -280,7 +284,10 @@ SYSTEM_ADD_ONS_LOCALE_CATALOGS =
 	<catalog-addon>plaintext
 ;
 
-SYSTEM_ADD_ONS_MEDIA = ;
+SYSTEM_ADD_ONS_MEDIA =
+	hmulti_audio.media_addon
+	mixer.media_addon
+	;
 
 SYSTEM_ADD_ONS_MEDIA_PLUGINS =  ;
 
@@ -290,7 +297,7 @@ SYSTEM_ADD_ONS_PRINT_TRANSPORT = ;
 
 SYSTEM_ADD_ONS_SCREENSAVERS = ;
 
-SYSTEM_ADD_ONS_DRIVERS_AUDIO = ;
+SYSTEM_ADD_ONS_DRIVERS_AUDIO = null_audio ;
 
 SYSTEM_ADD_ONS_DRIVERS_AUDIO_OLD = ;
 
