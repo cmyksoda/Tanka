@@ -71,8 +71,13 @@ HIDDevice::HIDDevice(usb_device device, const usb_configuration_info *config,
 				= interfaceInfo->generic[i]->generic;
 			if (generic.descriptor_type == B_USB_HID_DESCRIPTOR_HID) {
 				hidDescriptor = (usb_hid_descriptor *)&generic;
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+				descriptorLength = __builtin_bswap16(
+					hidDescriptor->descriptor_info[0].descriptor_length);
+#else
 				descriptorLength
 					= hidDescriptor->descriptor_info[0].descriptor_length;
+#endif
 				break;
 			}
 		}
@@ -98,8 +103,13 @@ HIDDevice::HIDDevice(usb_device device, const usb_configuration_info *config,
 			TRACE("get hid descriptor: result: 0x%08" B_PRIx32 "; length: %lu"
 				"\n", result, descriptorLength);
 			if (result == B_OK) {
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+				descriptorLength = __builtin_bswap16(
+					hidDescriptor->descriptor_info[0].descriptor_length);
+#else
 				descriptorLength
 					= hidDescriptor->descriptor_info[0].descriptor_length;
+#endif
 			} else {
 				descriptorLength = 256; /* XXX */
 				TRACE_ALWAYS("failed to get HID descriptor, trying with a "

@@ -63,7 +63,12 @@ HIDReportItem::Extract()
 	if (report == NULL)
 		return B_NO_INIT;
 
-	memcpy(&fData, report + fByteOffset, fByteCount);
+	// HID report fields are little-endian (LSB first); build the value
+	// explicitly so extraction is correct on big-endian hosts too. (On a
+	// little-endian host this is equivalent to the previous memcpy.)
+	fData = 0;
+	for (uint32 i = 0; i < fByteCount; i++)
+		fData |= (uint32)report[fByteOffset + i] << (8 * i);
 	fData >>= fShift;
 	fData &= fMask;
 

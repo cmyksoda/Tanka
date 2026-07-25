@@ -125,9 +125,22 @@ typedef union main_item_data_converter {
 
 typedef struct usage_value {
 	union {
+		// An extended HID usage's 32-bit value is (usage_page << 16) |
+		// usage_id, so usage_page is the high half and usage_id the low half
+		// of "extended". This struct aliases that uint32, so the field order
+		// must match host byte order or writing one field corrupts the other.
+		// On big-endian (PowerPC) usage_id must come last; getting this wrong
+		// dropped every collection's usage_id to 0, so mouse/keyboard
+		// application collections stopped matching and usb_hid reported
+		// "no handlers for hid device".
 		struct {
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+			uint16	usage_page;
+			uint16	usage_id;
+#else
 			uint16	usage_id;
 			uint16	usage_page;
+#endif
 		} _PACKED s;
 		uint32		extended;
 	} u;

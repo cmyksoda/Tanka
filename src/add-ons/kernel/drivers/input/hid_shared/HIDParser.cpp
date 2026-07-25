@@ -80,11 +80,20 @@ HIDParser::ParseReportDescriptor(const uint8 *reportDescriptor,
 					break;
 
 				case 2:
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+					// HID item data is little-endian on the wire.
+					data = __builtin_bswap16(shortItem->data.as_uint16[0]);
+#else
 					data = shortItem->data.as_uint16[0];
+#endif
 					break;
 
 				case 4:
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+					data = __builtin_bswap32(shortItem->data.as_uint32);
+#else
 					data = shortItem->data.as_uint32;
+#endif
 					break;
 
 				default:
@@ -172,8 +181,26 @@ HIDParser::ParseReportDescriptor(const uint8 *reportDescriptor,
 					if (!localState.string_index_set)
 						localState.string_index = localState.string_minimum;
 
-					main_item_data *mainData = (main_item_data *)&data;
-					target->AddMainItem(globalState, localState, *mainData,
+					// "data" holds the HID Input/Output/Feature flag bits
+					// (bit0 = constant, bit1 = variable, bit2 = relative, ...).
+					// main_item_data is 9 one-bit fields in a 16-bit unit; on
+					// big-endian those fields are not at the low bits of the
+					// unit, so neither pointer-casting &data nor assigning the
+					// aliased uint16 lines the bits up (the flags read 0, mouse
+					// axes looked absolute -> "no handlers"). Assign each field by
+					// name from its HID bit position: correct on any endianness,
+					// because the field is read back from the same physical bit.
+					main_item_data mainDataValue;
+					mainDataValue.data_constant = (data >> 0) & 1;
+					mainDataValue.array_variable = (data >> 1) & 1;
+					mainDataValue.relative = (data >> 2) & 1;
+					mainDataValue.wrap = (data >> 3) & 1;
+					mainDataValue.non_linear = (data >> 4) & 1;
+					mainDataValue.no_preferred = (data >> 5) & 1;
+					mainDataValue.null_state = (data >> 6) & 1;
+					mainDataValue.is_volatile = (data >> 7) & 1;
+					mainDataValue.bits_bytes = (data >> 8) & 1;
+					target->AddMainItem(globalState, localState, mainDataValue,
 						collection);
 				}
 
