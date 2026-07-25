@@ -443,9 +443,31 @@ static device_hooks sMouseHooks = {
 // #pragma mark - driver hooks
 
 
+// Provided by the kernel (arch/ppc/arch_platform.cpp); also used by the
+// openfirmware PCI bus manager. type: 0 = Grackle (MPC106), 1 = UniNorth.
+extern "C" void ppc_get_pci_host_bridge(uint32* type,
+	phys_addr_t* configAddress, phys_addr_t* configData);
+
+
 status_t
 init_hardware(void)
 {
+	// This driver talks to the VIA-CUDA on the Paddington/Grackle mac-io that
+	// dingusppc emulates, at the hardcoded MACIO_PHYS_BASE. Real Power Mac G4s
+	// use a UniNorth host bridge with a KeyLargo mac-io at a different address;
+	// poking MACIO_PHYS_BASE there hits nonexistent device space and machine-
+	// checks. Only attach on a Grackle host bridge (dingusppc / beige G3);
+	// on UniNorth, refuse so init_driver() never runs. Input on those machines
+	// comes via USB, not ADB.
+	uint32 hostBridgeType = 1;
+	phys_addr_t configAddress = 0;
+	phys_addr_t configData = 0;
+	ppc_get_pci_host_bridge(&hostBridgeType, &configAddress, &configData);
+	if (hostBridgeType != 0) {
+		dprintf("adb: PCI host bridge type %" B_PRIu32 " is not Grackle; "
+			"ADB driver not attaching (mac-io is elsewhere)\n", hostBridgeType);
+		return B_ERROR;
+	}
 	return B_OK;
 }
 
