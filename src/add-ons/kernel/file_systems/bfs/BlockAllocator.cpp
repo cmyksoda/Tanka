@@ -373,8 +373,13 @@ AllocationBlock::Free(uint16 start, uint16 numBlocks)
 */
 AllocationGroup::AllocationGroup()
 	:
+	fNumBits(0),
+	fNumBitmapBlocks(0),
+	fStart(0),
 	fFirstFree(-1),
 	fFreeBits(0),
+	fLargestStart(0),
+	fLargestLength(0),
 	fLargestValid(false)
 {
 }
