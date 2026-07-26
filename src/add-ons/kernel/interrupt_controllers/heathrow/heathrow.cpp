@@ -63,6 +63,9 @@ static heathrow_supported_device sSupportedDevices[] = {
 	{ "Grand Central",	0x106b, 0x0002, 1 },
 	{ "Heathrow",		0x106b, 0x0010, 2 },
 	{ "Paddington",		0x106b, 0x0017, 2 },
+	// Note: KeyLargo (0x0022) / Pangea (0x0025) / Intrepid (0x003e) do NOT use
+	// this old-style 2-bank PIC. Their mac-io interrupt controller is a CHRP
+	// OpenPIC (MPIC) at mac-io offset 0x40000, handled by the openpic driver.
 	{}
 };
 

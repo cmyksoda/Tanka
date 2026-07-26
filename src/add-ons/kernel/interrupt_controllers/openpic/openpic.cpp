@@ -58,6 +58,12 @@ struct openpic_supported_device {
 };
 
 static openpic_supported_device sSupportedDevices[] = {
+	// New World mac-io chips whose interrupt controller is a CHRP OpenPIC
+	// (MPIC) at mac-io offset 0x40000 -- the "/interrupt-controller@40000"
+	// node (device_type "open-pic") -- rather than the old Heathrow 2-bank
+	// PIC. KeyLargo (0x0022) is the Power Mac G4 (Sawtooth/Digital Audio).
+	{ "KeyLargo",					0x106b,	0x0022,	0x40000 },
+	{ "Pangea",						0x106b,	0x0025,	0x40000 },
 	{ "Intrepid I/O Controller",	0x106b,	0x003e,	0x40000 },
 	{}
 };
@@ -74,14 +80,8 @@ struct openpic_info : interrupt_controller_info {
 
 	~openpic_info()
 	{
-		// unmap registers)
 		if (register_area >= 0)
 			delete_area(register_area);
-
-		// uninit parent node driver
-		if (pci)
-			//XXX do I mean it ?
-			sDeviceManager->put_node(sDeviceManager->get_parent_node(node));
 	}
 
 	openpic_supported_device	*supported_device;
@@ -113,19 +113,22 @@ openpic_check_supported_device(uint16 vendorID, uint16 deviceID)
 }
 
 
+// The Apple MPIC register block is memory-mapped (inside the mac-io register
+// space) and little-endian, so read/write the mapped address directly and
+// byte-swap on the big-endian PPC. Writes use an ordered store (eieio).
 static uint32
 openpic_read(openpic_info *info, int reg)
 {
-	return B_SWAP_INT32(info->pci->read_io_32(info->device,
-		info->virtual_registers + reg));
+	uint32 value = *(volatile uint32*)(info->virtual_registers + reg);
+	return B_SWAP_INT32(value);
 }
 
 
 static void
 openpic_write(openpic_info *info, int reg, uint32 val)
 {
-	info->pci->write_io_32(info->device, info->virtual_registers + reg,
-		B_SWAP_INT32(val));
+	*(volatile uint32*)(info->virtual_registers + reg) = B_SWAP_INT32(val);
+	asm volatile("eieio" ::: "memory");
 }
 
 
@@ -148,16 +151,14 @@ openpic_eoi(openpic_info *info, int cpu)
 static void
 openpic_enable_irq(openpic_info *info, int irq, int type)
 {
-// TODO: Align this code with the sequence recommended in the Open PIC
-// Specification (v 1.2 section 5.2.2).
-	uint32 x;
-
-	x = openpic_read(info, OPENPIC_SRC_VECTOR(irq));
-	x &= ~(OPENPIC_IMASK | OPENPIC_SENSE_LEVEL | OPENPIC_SENSE_EDGE);
+	uint32 x = openpic_read(info, OPENPIC_SRC_VECTOR(irq));
+	// Clear mask, sense and polarity, then program per type. mac-io level
+	// interrupts are active-low; treat edge interrupts as rising (active-high).
+	x &= ~(OPENPIC_IMASK | OPENPIC_SENSE_LEVEL | OPENPIC_POLARITY_POSITIVE);
 	if (type == IRQ_TYPE_LEVEL)
-		x |= OPENPIC_SENSE_LEVEL;
+		x |= OPENPIC_SENSE_LEVEL;		// level, active-low (polarity bit clear)
 	else
-		x |= OPENPIC_SENSE_EDGE;
+		x |= OPENPIC_POLARITY_POSITIVE;	// edge, rising
 	openpic_write(info, OPENPIC_SRC_VECTOR(irq), x);
 }
 
@@ -203,7 +204,7 @@ openpic_init(openpic_info *info)
 			break;
 		default:
 			snprintf(versionBuffer, sizeof(versionBuffer),
-				"unknown (feature reg: 0x%lx)", x);
+				"unknown (feature reg: 0x%" B_PRIx32 ")", x);
 			featureVersion = versionBuffer;
 			break;
 	}
@@ -240,7 +241,7 @@ openpic_init(openpic_info *info)
 	for (int irq = 0; irq < info->irq_count; irq++) {
 		x = irq;
 		x |= OPENPIC_IMASK;
-		x |= OPENPIC_POLARITY_POSITIVE;
+		// level, active-low (mac-io default); no POLARITY_POSITIVE bit.
 		x |= OPENPIC_SENSE_LEVEL;
 		x |= 8 << OPENPIC_PRIORITY_SHIFT;
 		openpic_write(info, OPENPIC_SRC_VECTOR(irq), x);
@@ -341,14 +342,19 @@ openpic_init_driver(device_node *node, void **cookie)
 
 	info->node = node;
 
-	// get interface to PCI device
-	void *aCookie;
-	status_t status = sDeviceManager->get_driver(sDeviceManager->get_parent_node(node),
-												 (driver_module_info**)&info->pci, &aCookie);
+	// get the interface to the parent PCI device. get_driver() hands back the
+	// parent node's driver cookie directly; for a PCI device node that cookie
+	// is the pci_device we need. (Calling the PCI module's init_driver() again
+	// on our own node -- which has no PCI address attributes -- leaves
+	// info->device uninitialized and faults on first register access; this is
+	// the same bug the heathrow driver hit and fixed.)
+	void *pciCookie;
+	status_t status = sDeviceManager->get_driver(
+		sDeviceManager->get_parent_node(node),
+		(driver_module_info**)&info->pci, &pciCookie);
 	if (status != B_OK)
 		return status;
-
-	info->pci->info.init_driver(node, (void**)&info->device);
+	info->device = (pci_device*)pciCookie;
 
 	// get the pci info for the device
 	pci_info pciInfo;
@@ -375,6 +381,8 @@ openpic_init_driver(device_node *node, void **cookie)
 	}
 	physicalRegisterBase += info->supported_device->register_offset;
 	registerSpaceSize -= info->supported_device->register_offset;
+	if (registerSpaceSize < OPENPIC_MIN_REGISTER_SPACE_SIZE)
+		registerSpaceSize = OPENPIC_MAX_REGISTER_SPACE_SIZE;
 	if (registerSpaceSize > OPENPIC_MAX_REGISTER_SPACE_SIZE)
 		registerSpaceSize = OPENPIC_MAX_REGISTER_SPACE_SIZE;
 
