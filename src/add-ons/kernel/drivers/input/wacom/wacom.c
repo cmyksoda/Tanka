@@ -708,6 +708,17 @@ uninit_driver(void)
 const char**
 publish_devices()
 {
+#ifdef __POWERPC__
+	// On this PowerPC port the USB reconnect churn drives legacy_driver_rescan
+	// - and therefore this function - repeatedly, and the dynamic name-array
+	// rebuild used on other platforms double-freed under that churn, panicking
+	// the kernel ("freeing unknown block 0xdeadbeef"). There is no Wacom tablet
+	// on the target hardware, so publish nothing via a static, never-freed
+	// empty list. Drop this guard to support a real Wacom device on ppc.
+	DPRINTF_INFO((ID "publish_devices()\n"));
+	static const char* sNoDevices[] = { NULL };
+	return sNoDevices;
+#else
 	wacom_device *device;
 	int i;
 
@@ -736,6 +747,7 @@ publish_devices()
 	release_sem(sDeviceListLock);
 
 	return (const char**)sDeviceNames;
+#endif
 }
 
 static device_hooks sDeviceHooks = {
