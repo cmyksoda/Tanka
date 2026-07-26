@@ -59,9 +59,14 @@ remap_frame_buffer(framebuffer_info& info, addr_t physicalBase, uint32 width,
 	addr_t base = physicalBase;
 	size_t size = bytesPerRow * height;
 
+	// Request write-combining up front so the mapping is cache-inhibited
+	// but non-guarded: on PowerPC (74xx) that lets the CPU gather pixel
+	// stores instead of one strictly ordered bus transaction per write,
+	// the difference between a usable and a painfully slow frame buffer.
+	// No effective difference on little-endian/x86.
 	area_id area = map_physical_memory("framebuffer buffer", base,
-		size, B_ANY_KERNEL_ADDRESS, B_READ_AREA | B_WRITE_AREA,
-		(void**)&frameBuffer);
+		size, B_ANY_KERNEL_ADDRESS | B_WRITE_COMBINING_MEMORY,
+		B_READ_AREA | B_WRITE_AREA, (void**)&frameBuffer);
 	if (area < 0)
 		return area;
 
@@ -94,6 +99,13 @@ remap_frame_buffer(framebuffer_info& info, addr_t physicalBase, uint32 width,
 
 	// Update shared frame buffer information
 	sharedInfo.bytes_per_row = bytesPerRow;
+
+	// app_server now owns the frame buffer: silence the kernel frame buffer
+	// console so kernel debug output (e.g. the G4's USB probe spam and
+	// short-lived programs' exit-crashes) stops painting over the composited
+	// desktop. Debug output still goes to serial. The console area stays
+	// mapped; only its drawing is switched off.
+	frame_buffer_console_disable();
 
 	return B_OK;
 }
