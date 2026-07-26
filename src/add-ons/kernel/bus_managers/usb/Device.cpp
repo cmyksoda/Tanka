@@ -53,6 +53,18 @@ Device::Device(Object* parent, int8 hubAddress, uint8 hubPort,
 		return;
 	}
 
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+	// USB descriptors are little-endian on the wire; swap multi-byte fields.
+	fDeviceDescriptor.usb_version
+		= __builtin_bswap16(fDeviceDescriptor.usb_version);
+	fDeviceDescriptor.vendor_id
+		= __builtin_bswap16(fDeviceDescriptor.vendor_id);
+	fDeviceDescriptor.product_id
+		= __builtin_bswap16(fDeviceDescriptor.product_id);
+	fDeviceDescriptor.device_version
+		= __builtin_bswap16(fDeviceDescriptor.device_version);
+#endif
+
 	TRACE("full device descriptor for device %d:\n", fDeviceAddress);
 	TRACE("\tlength:..............%d\n", fDeviceDescriptor.length);
 	TRACE("\tdescriptor_type:.....0x%04x\n", fDeviceDescriptor.descriptor_type);
@@ -91,6 +103,12 @@ Device::Device(Object* parent, int8 hubAddress, uint8 hubPort,
 			return;
 		}
 
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+		configDescriptor.total_length
+			= __builtin_bswap16(configDescriptor.total_length);
+#endif
+
+
 		TRACE("configuration %" B_PRId32 "\n", i);
 		TRACE("\tlength:..............%d\n", configDescriptor.length);
 		TRACE("\tdescriptor_type:.....0x%02x\n",
@@ -125,6 +143,10 @@ Device::Device(Object* parent, int8 hubAddress, uint8 hubPort,
 		usb_configuration_descriptor* configuration
 			= (usb_configuration_descriptor*)configData;
 		fConfigurations[i].descr = configuration;
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+		configuration->total_length
+			= __builtin_bswap16(configuration->total_length);
+#endif
 		fConfigurations[i].interface_count = configuration->number_interfaces;
 		fConfigurations[i].interface = (usb_interface_list*)malloc(
 			configuration->number_interfaces * sizeof(usb_interface_list));
@@ -219,6 +241,10 @@ Device::Device(Object* parent, int8 hubAddress, uint8 hubPort,
 					TRACE("got endpoint descriptor\n");
 					usb_endpoint_descriptor* endpointDescriptor
 						= (usb_endpoint_descriptor*)&configData[descriptorStart];
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+					endpointDescriptor->max_packet_size = __builtin_bswap16(
+						endpointDescriptor->max_packet_size);
+#endif
 					TRACE("\tlength:.............%d\n",
 						endpointDescriptor->length);
 					TRACE("\tdescriptor_type:....0x%02x\n",

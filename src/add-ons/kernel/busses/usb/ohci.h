@@ -61,6 +61,7 @@ private:
 		// Interrupt functions
 static	int32						_InterruptHandler(void *data);
 		int32						_Interrupt();
+static	int32						_PollThread(void *data);
 
 		// Transfer functions
 		status_t					_AddPendingTransfer(Transfer *transfer,
@@ -209,6 +210,8 @@ inline	uint32						_ReadReg(uint32 reg);
 		sem_id						fFinishTransfersSem;
 		thread_id					fFinishThread;
 		bool						fStopFinishThread;
+		thread_id					fPollThread;
+		volatile bool				fStopPollThread;
 		Pipe *						fProcessingPipe;
 		// frame bandwidth watchdogs array
 		uint16 *					fFrameBandwidth;

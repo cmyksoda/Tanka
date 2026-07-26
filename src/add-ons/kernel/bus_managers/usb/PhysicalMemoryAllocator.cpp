@@ -13,6 +13,8 @@
 #include <util/AutoLock.h>
 #include <util/kernel_cpp.h>
 
+#include <vm/vm.h>
+
 #include "PhysicalMemoryAllocator.h"
 
 
@@ -90,6 +92,16 @@ PhysicalMemoryAllocator::PhysicalMemoryAllocator(const char *name,
 	}
 
 	fPhysicalBase = physicalEntry.address;
+
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+	// PPC has no hardware DMA cache coherency. The USB controller DMAs both
+	// descriptors and transfer data into this area; with a normal cached
+	// mapping the CPU reads stale/partial cache lines (observed as descriptors
+	// that are sometimes valid, sometimes garbage). Map the whole DMA area
+	// uncached so reads always reflect what the controller wrote. x86 has
+	// coherent DMA and does not need this.
+	vm_set_area_memory_type(fArea, fPhysicalBase, B_UNCACHED_MEMORY);
+#endif
 
 	fNoMemoryCondition.Init(this, "USB PMA");
 	fStatus = B_OK;

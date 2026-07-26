@@ -12,18 +12,30 @@
 
 #define USB_MODULE_NAME "ohci roothub"
 
+// The root hub descriptors below emulate what a real USB device returns, which
+// is little-endian on the wire. On a big-endian host the multi-byte fields of
+// these static structs would otherwise be stored host-endian and then be
+// double-swapped by the generic descriptor parser. RH_LE16 stores them
+// little-endian (compile-time constant); no-op on little-endian hosts.
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+#	define RH_LE16(x) ((uint16)__builtin_bswap16((uint16)(x)))
+#else
+#	define RH_LE16(x) ((uint16)(x))
+#endif
+
+
 static usb_device_descriptor sOHCIRootHubDevice =
 {
 	18,								// Descriptor length
 	USB_DESCRIPTOR_DEVICE,			// Descriptor type
-	0x110,							// USB 1.1
+	RH_LE16(0x110),					// USB 1.1
 	0x09,							// Class (9 = Hub)
 	0,								// Subclass
 	0,								// Protocol
 	64,								// Max packet size on endpoint 0
-	0,								// Vendor ID
-	0,								// Product ID
-	0x110,							// Version
+	RH_LE16(0),						// Vendor ID
+	RH_LE16(0),						// Product ID
+	RH_LE16(0x110),					// Version
 	1,								// Index of manufacturer string
 	2,								// Index of product string
 	0,								// Index of serial number string
@@ -44,7 +56,7 @@ static ohci_root_hub_configuration_s sOHCIRootHubConfig =
 	{ // configuration descriptor
 		9,								// Descriptor length
 		USB_DESCRIPTOR_CONFIGURATION,	// Descriptor type
-		34,								// Total length of configuration (including
+		RH_LE16(34),					// Total length of configuration (including
 										// interface, endpoint and hub descriptors)
 		1,								// Number of interfaces
 		1,								// Value of this configuration
@@ -70,7 +82,7 @@ static ohci_root_hub_configuration_s sOHCIRootHubConfig =
 		USB_DESCRIPTOR_ENDPOINT,		// Descriptor type
 		USB_REQTYPE_DEVICE_IN | 1,		// Endpoint address (first in IN endpoint)
 		0x03,							// Attributes (0x03 = interrupt endpoint)
-		8,								// Max packet size
+		RH_LE16(8),						// Max packet size
 		0xff							// Interval 256
 	},
 
@@ -79,7 +91,7 @@ static ohci_root_hub_configuration_s sOHCIRootHubConfig =
 										// deprecated power control mask)
 		USB_DESCRIPTOR_HUB,				// Descriptor type
 		2,								// Number of ports
-		0x0000,							// Hub characteristics
+		RH_LE16(0x0000),				// Hub characteristics
 		0,								// Power on to power good (in 2ms units)
 		0,								// Maximum current (in mA)
 		0x00,							// Both ports are removable
@@ -159,6 +171,11 @@ OHCIRootHub::ProcessTransfer(OHCI *ohci, Transfer *transfer)
 
 			usb_port_status portStatus;
 			if (ohci->GetPortStatus(request->Index - 1, &portStatus) >= B_OK) {
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+				// Return little-endian, matching a real hub on the wire.
+				portStatus.status = __builtin_bswap16(portStatus.status);
+				portStatus.change = __builtin_bswap16(portStatus.change);
+#endif
 				actualLength = MIN(sizeof(usb_port_status), transfer->DataLength());
 				memcpy(transfer->Data(), (void *)&portStatus, actualLength);
 				status = B_OK;

@@ -139,6 +139,12 @@ Hub::UpdatePortStatus(uint8 index)
 		return B_ERROR;
 	}
 
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+	// Port status/change are little-endian on the wire; convert to host order.
+	fPortStatus[index].status = __builtin_bswap16(fPortStatus[index].status);
+	fPortStatus[index].change = __builtin_bswap16(fPortStatus[index].change);
+#endif
+
 	return B_OK;
 }
 

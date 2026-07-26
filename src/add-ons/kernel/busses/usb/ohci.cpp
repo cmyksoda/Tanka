@@ -286,6 +286,8 @@ OHCI::OHCI(pci_info *info, pci_device_module_info* pci, pci_device* device, Stac
 		fFinishTransfersSem(-1),
 		fFinishThread(-1),
 		fStopFinishThread(false),
+		fPollThread(-1),
+		fStopPollThread(false),
 		fProcessingPipe(NULL),
 		fFrameBandwidth(NULL),
 		fRootHub(NULL),
@@ -566,6 +568,13 @@ OHCI::OHCI(pci_info *info, pci_device_module_info* pci, pci_device* device, Stac
 	// Install the interrupt handler
 	TRACE("installing interrupt handler\n");
 	install_io_interrupt_handler(fIRQ, _InterruptHandler, (void *)this, 0);
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+	// See _PollThread(): drive completions by polling since the PCI interrupt
+	// is not routed on ppc yet.
+	fPollThread = spawn_kernel_thread(_PollThread, "ohci poll",
+		B_URGENT_DISPLAY_PRIORITY, (void *)this);
+	resume_thread(fPollThread);
+#endif
 
 	// Enable interesting interrupts now that the handler is in place
 	_WriteReg(OHCI_INTERRUPT_ENABLE, OHCI_NORMAL_INTERRUPTS
@@ -579,6 +588,11 @@ OHCI::OHCI(pci_info *info, pci_device_module_info* pci, pci_device* device, Stac
 OHCI::~OHCI()
 {
 	int32 result = 0;
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+	fStopPollThread = true;
+	if (fPollThread >= 0)
+		wait_for_thread(fPollThread, &result);
+#endif
 	fStopFinishThread = true;
 	delete_sem(fFinishTransfersSem);
 	wait_for_thread(fFinishThread, &result);
@@ -915,6 +929,31 @@ int32
 OHCI::_InterruptHandler(void *data)
 {
 	return ((OHCI *)data)->_Interrupt();
+}
+
+
+// PPC interim: the OHCI completion interrupt is not routed through the
+// KeyLargo/OpenPIC interrupt controller on real PowerMacs (the PCI
+// interrupt_line byte does not name the openpic source; the real routing is in
+// the OpenFirmware interrupt-map, which the runtime PCI driver does not read).
+// The controller still writes its done queue to the HCCA every 1 ms frame
+// regardless of whether the CPU interrupt is delivered, so we poll _Interrupt()
+// at frame rate to drive transfer completion. This is a stopgap until PCI IRQs
+// are routed from the OF device tree; on little-endian hosts (x86) interrupts
+// work and this thread is never started.
+int32
+OHCI::_PollThread(void *data)
+{
+	OHCI *ohci = (OHCI *)data;
+	while (!ohci->fStopPollThread) {
+		snooze(1000);
+		// _Interrupt() grabs a spinlock, which requires interrupts disabled
+		// (it normally runs in interrupt context). Reproduce that here.
+		cpu_status former = disable_interrupts();
+		ohci->_Interrupt();
+		restore_interrupts(former);
+	}
+	return 0;
 }
 
 
@@ -1488,7 +1527,18 @@ OHCI::_SubmitRequest(Transfer *transfer)
 		| OHCI_TD_SET_DELAY_INTERRUPT(OHCI_TD_INTERRUPT_IMMEDIATE);
 
 	generic_io_vec vector;
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+	// The USB SETUP packet carries wValue/wIndex/wLength little-endian on the
+	// wire, but usb_request_data stores them host-endian. Swap into a local
+	// copy on big-endian hosts (ppc) before it is DMA'd to the device.
+	usb_request_data leRequest = *requestData;
+	leRequest.Value = __builtin_bswap16(leRequest.Value);
+	leRequest.Index = __builtin_bswap16(leRequest.Index);
+	leRequest.Length = __builtin_bswap16(leRequest.Length);
+	vector.base = (generic_addr_t)&leRequest;
+#else
 	vector.base = (generic_addr_t)requestData;
+#endif
 	vector.length = sizeof(usb_request_data);
 	_WriteDescriptorChain(setupDescriptor, &vector, 1, false);
 
@@ -2635,6 +2685,10 @@ OHCI::_UnlockEndpoints()
 inline void
 OHCI::_WriteReg(uint32 reg, uint32 value)
 {
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+	// OHCI registers are little-endian; swap on a big-endian host (ppc).
+	value = __builtin_bswap32(value);
+#endif
 	*(volatile uint32 *)(fOperationalRegisters + reg) = value;
 }
 
@@ -2642,7 +2696,12 @@ OHCI::_WriteReg(uint32 reg, uint32 value)
 inline uint32
 OHCI::_ReadReg(uint32 reg)
 {
-	return *(volatile uint32 *)(fOperationalRegisters + reg);
+	uint32 value = *(volatile uint32 *)(fOperationalRegisters + reg);
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+	// OHCI registers are little-endian; swap on a big-endian host (ppc).
+	value = __builtin_bswap32(value);
+#endif
+	return value;
 }
 
 
@@ -2650,10 +2709,10 @@ void
 OHCI::_PrintEndpoint(ohci_endpoint_descriptor *endpoint)
 {
 	dprintf("endpoint %p\n", endpoint);
-	dprintf("\tflags........... 0x%08" B_PRIx32 "\n", endpoint->flags);
-	dprintf("\ttail_physical... 0x%08" B_PRIx32 "\n", endpoint->tail_physical_descriptor);
-	dprintf("\thead_physical... 0x%08" B_PRIx32 "\n", endpoint->head_physical_descriptor);
-	dprintf("\tnext_physical... 0x%08" B_PRIx32 "\n", endpoint->next_physical_endpoint);
+	dprintf("\tflags........... 0x%08" B_PRIx32 "\n", (uint32)endpoint->flags);
+	dprintf("\ttail_physical... 0x%08" B_PRIx32 "\n", (uint32)endpoint->tail_physical_descriptor);
+	dprintf("\thead_physical... 0x%08" B_PRIx32 "\n", (uint32)endpoint->head_physical_descriptor);
+	dprintf("\tnext_physical... 0x%08" B_PRIx32 "\n", (uint32)endpoint->next_physical_endpoint);
 	dprintf("\tphysical........ 0x%08" B_PRIx32 "\n", endpoint->physical_address);
 	dprintf("\ttail_logical.... %p\n", endpoint->tail_logical_descriptor);
 	dprintf("\tnext_logical.... %p\n", endpoint->next_logical_endpoint);
@@ -2665,10 +2724,10 @@ OHCI::_PrintDescriptorChain(ohci_general_td *topDescriptor)
 {
 	while (topDescriptor) {
 		dprintf("descriptor %p\n", topDescriptor);
-		dprintf("\tflags........... 0x%08" B_PRIx32 "\n", topDescriptor->flags);
-		dprintf("\tbuffer_physical. 0x%08" B_PRIx32 "\n", topDescriptor->buffer_physical);
-		dprintf("\tnext_physical... 0x%08" B_PRIx32 "\n", topDescriptor->next_physical_descriptor);
-		dprintf("\tlast_byte....... 0x%08" B_PRIx32 "\n", topDescriptor->last_physical_byte_address);
+		dprintf("\tflags........... 0x%08" B_PRIx32 "\n", (uint32)topDescriptor->flags);
+		dprintf("\tbuffer_physical. 0x%08" B_PRIx32 "\n", (uint32)topDescriptor->buffer_physical);
+		dprintf("\tnext_physical... 0x%08" B_PRIx32 "\n", (uint32)topDescriptor->next_physical_descriptor);
+		dprintf("\tlast_byte....... 0x%08" B_PRIx32 "\n", (uint32)topDescriptor->last_physical_byte_address);
 		dprintf("\tphysical........ 0x%08" B_PRIx32 "\n", topDescriptor->physical_address);
 		dprintf("\tbuffer_size..... %lu\n", topDescriptor->buffer_size);
 		dprintf("\tbuffer_logical.. %p\n", topDescriptor->buffer_logical);
@@ -2684,10 +2743,10 @@ OHCI::_PrintDescriptorChain(ohci_isochronous_td *topDescriptor)
 {
 	while (topDescriptor) {
 		dprintf("iso.descriptor %p\n", topDescriptor);
-		dprintf("\tflags........... 0x%08" B_PRIx32 "\n", topDescriptor->flags);
-		dprintf("\tbuffer_pagebyte0 0x%08" B_PRIx32 "\n", topDescriptor->buffer_page_byte_0);
-		dprintf("\tnext_physical... 0x%08" B_PRIx32 "\n", topDescriptor->next_physical_descriptor);
-		dprintf("\tlast_byte....... 0x%08" B_PRIx32 "\n", topDescriptor->last_byte_address);
+		dprintf("\tflags........... 0x%08" B_PRIx32 "\n", (uint32)topDescriptor->flags);
+		dprintf("\tbuffer_pagebyte0 0x%08" B_PRIx32 "\n", (uint32)topDescriptor->buffer_page_byte_0);
+		dprintf("\tnext_physical... 0x%08" B_PRIx32 "\n", (uint32)topDescriptor->next_physical_descriptor);
+		dprintf("\tlast_byte....... 0x%08" B_PRIx32 "\n", (uint32)topDescriptor->last_byte_address);
 		dprintf("\toffset:\n\t0x%04x 0x%04x 0x%04x 0x%04x\n"
 							"\t0x%04x 0x%04x 0x%04x 0x%04x\n",
 				topDescriptor->offset[0], topDescriptor->offset[1],

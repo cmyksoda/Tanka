@@ -275,10 +275,45 @@
 #define OHCI_STATIC_ENDPOINT_COUNT	6
 #define OHCI_BIGGEST_INTERVAL		32
 
+// Endian-aware 32-bit field for the OHCI HCCA and DMA descriptors. The OHCI
+// controller reads/writes these little-endian; on a big-endian host (ppc) they
+// must be byte-swapped on access. On a little-endian host every operation is a
+// no-op, so x86/x86_64 are unaffected. It stays a single uint32 member so the
+// in-memory layout the controller DMAs is byte-for-byte unchanged.
+struct ohci_le32 {
+	uint32	raw;
+
+	inline operator uint32() const
+	{
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+		return __builtin_bswap32(raw);
+#else
+		return raw;
+#endif
+	}
+
+	inline ohci_le32& operator=(uint32 value)
+	{
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+		raw = __builtin_bswap32(value);
+#else
+		raw = value;
+#endif
+		return *this;
+	}
+
+	inline ohci_le32& operator|=(uint32 value)
+		{ return *this = (uint32)*this | value; }
+	inline ohci_le32& operator&=(uint32 value)
+		{ return *this = (uint32)*this & value; }
+	inline ohci_le32& operator+=(uint32 value)
+		{ return *this = (uint32)*this + value; }
+};
+
 typedef struct {
-	uint32		interrupt_table[OHCI_NUMBER_OF_INTERRUPTS];
-	uint32		current_frame_number;
-	uint32		done_head;
+	ohci_le32		interrupt_table[OHCI_NUMBER_OF_INTERRUPTS];
+	ohci_le32		current_frame_number;
+	ohci_le32		done_head;
 	// The following is 120 instead of 116 because the spec
 	// only specifies 252 bytes
 	uint8		reserved_for_hc[120];
@@ -297,10 +332,10 @@ typedef struct {
 
 typedef struct {
 	// Hardware part
-	uint32	flags;						// Flags field
-	uint32	tail_physical_descriptor;	// Queue tail physical pointer
-	uint32	head_physical_descriptor;	// Queue head physical pointer
-	uint32	next_physical_endpoint;		// Physical pointer to the next endpoint
+	ohci_le32	flags;						// Flags field
+	ohci_le32	tail_physical_descriptor;	// Queue tail physical pointer
+	ohci_le32	head_physical_descriptor;	// Queue head physical pointer
+	ohci_le32	next_physical_endpoint;		// Physical pointer to the next endpoint
 	// Software part
 	uint32	physical_address;			// Physical pointer to this address
 	void	*tail_logical_descriptor;	// Queue tail logical pointer
@@ -336,10 +371,10 @@ typedef struct {
 
 typedef struct {
 	// Hardware part 16 bytes
-	uint32	flags;						// Flags field
-	uint32	buffer_physical;			// Physical buffer pointer
-	uint32	next_physical_descriptor;	// Physical pointer next descriptor
-	uint32	last_physical_byte_address;	// Physical pointer to buffer end
+	ohci_le32	flags;						// Flags field
+	ohci_le32	buffer_physical;			// Physical buffer pointer
+	ohci_le32	next_physical_descriptor;	// Physical pointer next descriptor
+	ohci_le32	last_physical_byte_address;	// Physical pointer to buffer end
 	// Software part
 	uint32	physical_address;			// Physical address of this descriptor
 	size_t	buffer_size;				// Size of the buffer
@@ -390,10 +425,10 @@ typedef struct {
 #define OHCI_ITD_NOFFSET 8
 typedef struct {
 	// Hardware part 32 byte
-	uint32		flags;
-	uint32		buffer_page_byte_0;			// Physical page number of byte 0
-	uint32		next_physical_descriptor;	// Next isochronous transfer descriptor
-	uint32		last_byte_address;			// Physical buffer end
+	ohci_le32		flags;
+	ohci_le32		buffer_page_byte_0;			// Physical page number of byte 0
+	ohci_le32		next_physical_descriptor;	// Next isochronous transfer descriptor
+	ohci_le32		last_byte_address;			// Physical buffer end
 	uint16		offset[OHCI_ITD_NOFFSET];	// Buffer offsets
 	// Software part
 	uint32		physical_address;			// Physical address of this descriptor
