@@ -1175,6 +1175,50 @@ arch_mmu_init(void)
 	gKernelArgs.arch_args.exception_handlers.start = (addr_t)exceptionHandlers;
 	gKernelArgs.arch_args.exception_handlers.size = B_PAGE_SIZE;
 
+	// Detect the PCI host bridge type and its config registers, so the kernel
+	// PCI driver knows which config-space mechanism to use. The Grackle's
+	// registers are architecturally fixed; UniNorth's are at its base +
+	// 0x800000 (address) and + 0xc00000 (data). We resolve the bridge from the
+	// boot path's first component (e.g. "/pci@f2000000").
+	gKernelArgs.arch_args.pci_host_bridge_type = 0;
+	gKernelArgs.arch_args.pci_config_address = 0xfec00000;
+	gKernelArgs.arch_args.pci_config_data = 0xfee00000;
+	{
+		char bootPath[256];
+		bootPath[0] = '\0';
+		of_getprop(gChosen, "bootpath", bootPath, sizeof(bootPath));
+		char hostPath[80];
+		hostPath[0] = '\0';
+		if (bootPath[0] == '/') {
+			const char* slash = strchr(bootPath + 1, '/');
+			size_t len = slash != NULL
+				? (size_t)(slash - bootPath) : strlen(bootPath);
+			if (len > 0 && len < sizeof(hostPath)) {
+				memcpy(hostPath, bootPath, len);
+				hostPath[len] = '\0';
+			}
+		}
+		intptr_t node = hostPath[0] != '\0' ? of_finddevice(hostPath) : -1;
+		if (node != -1 && node != 0) {
+			char compatible[64];
+			compatible[0] = '\0';
+			of_getprop(node, "compatible", compatible, sizeof(compatible));
+			if (strcmp(compatible, "uni-north") == 0) {
+				uint32 reg[2] = { 0, 0 };
+				of_getprop(node, "reg", reg, sizeof(reg));
+				gKernelArgs.arch_args.pci_host_bridge_type = 1;
+				gKernelArgs.arch_args.pci_config_address
+					= (uint64)reg[0] + 0x800000;
+				gKernelArgs.arch_args.pci_config_data
+					= (uint64)reg[0] + 0xc00000;
+			}
+		}
+		dprintf("pci host bridge: type %u config 0x%x/0x%x (%s)\n",
+			(unsigned)gKernelArgs.arch_args.pci_host_bridge_type,
+			(unsigned)gKernelArgs.arch_args.pci_config_address,
+			(unsigned)gKernelArgs.arch_args.pci_config_data, hostPath);
+	}
+
 	return B_OK;
 }
 

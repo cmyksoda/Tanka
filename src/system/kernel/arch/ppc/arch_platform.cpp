@@ -362,6 +362,21 @@ PPCUBoot::ShutDown(bool reboot)
 // static buffer for constructing the actual PPCPlatform
 static char *sPPCPlatformBuffer[PLATFORM_BUFFER_SIZE];
 
+// PCI host bridge info, captured by the boot loader (see arch_kernel_args).
+static uint32 sPCIHostBridgeType = 0;
+static phys_addr_t sPCIConfigAddress = 0xfec00000;
+static phys_addr_t sPCIConfigData = 0xfee00000;
+
+
+extern "C" void
+ppc_get_pci_host_bridge(uint32* type, phys_addr_t* configAddress,
+	phys_addr_t* configData)
+{
+	*type = sPCIHostBridgeType;
+	*configAddress = sPCIConfigAddress;
+	*configData = sPCIConfigData;
+}
+
 
 status_t
 arch_platform_init(struct kernel_args *kernelArgs)
@@ -377,6 +392,10 @@ arch_platform_init(struct kernel_args *kernelArgs)
 		default:
 			return B_ERROR;
 	}
+
+	sPCIHostBridgeType = kernelArgs->arch_args.pci_host_bridge_type;
+	sPCIConfigAddress = kernelArgs->arch_args.pci_config_address;
+	sPCIConfigData = kernelArgs->arch_args.pci_config_data;
 
 	return sPPCPlatform->Init(kernelArgs);
 }

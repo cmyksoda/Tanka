@@ -32,6 +32,12 @@ typedef struct {
 
 	// platform type we booted from
 	int			platform;
+
+	// PCI host bridge, detected by the boot loader from Open Firmware.
+	// pci_host_bridge_type: 0 = Grackle (MPC106), 1 = UniNorth.
+	uint32		pci_host_bridge_type;
+	uint64		pci_config_address;
+	uint64		pci_config_data;
 } arch_kernel_args;
 
 #endif	/* KERNEL_ARCH_PPC_KERNEL_ARGS_H */

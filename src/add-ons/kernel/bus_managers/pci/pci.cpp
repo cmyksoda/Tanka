@@ -1282,9 +1282,15 @@ PCI::_GetBarInfo(PCIDev *dev, uint8 offset, uint32 &_ramAddress,
 	if (!is64bit)
 		return 1;
 
-	if (_highRAMAddress == NULL || _highPCIAddress == NULL || _highSize == NULL)
-		panic("64 bit PCI BAR but no space to store high values\n");
-	else {
+	if (_highRAMAddress == NULL || _highPCIAddress == NULL || _highSize == NULL) {
+		// A 64-bit BAR keeps its upper 32 bits in the following register.
+		// In the last BAR slot there is nowhere to store them; on 32-bit
+		// systems they are always zero anyway, so drop them rather than
+		// panic (some host bridges/devices report a 64-bit type here).
+		dprintf("pci: 64-bit BAR at %d:%d:%d offset %#x has no high-value "
+			"storage; ignoring high dword\n", dev->bus, dev->device,
+			dev->function, offset);
+	} else {
 		*_highRAMAddress = ramAddress >> 32;
 		*_highPCIAddress = pciAddress >> 32;
 		*_highSize = size >> 32;

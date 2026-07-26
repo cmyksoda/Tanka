@@ -68,6 +68,13 @@
 #define GRACKLE_IO_PCI_BASE		0x00000000
 #define GRACKLE_IO_SIZE			0x00400000
 
+// Host bridge types (must match arch_kernel_args.h).
+#define PCI_HOST_BRIDGE_GRACKLE		0
+#define PCI_HOST_BRIDGE_UNINORTH	1
+
+extern "C" void ppc_get_pci_host_bridge(uint32* type,
+	phys_addr_t* configAddress, phys_addr_t* configData);
+
 
 device_manager_info* gDeviceManager;
 pci_module_info* gPCI;
@@ -97,7 +104,7 @@ public:
 	status_t Finalize();
 
 private:
-	status_t InitGrackle();
+	status_t InitController();
 
 	inline void SetConfigAddress(uint8 bus, uint8 device, uint8 function,
 		uint16 offset);
@@ -108,8 +115,9 @@ private:
 	AreaDeleter		fRegsArea;
 	addr_t			fConfigAddr = 0;
 	addr_t			fConfigData = 0;
+	uint32			fHostBridgeType = PCI_HOST_BRIDGE_GRACKLE;
 
-	pci_resource_range	fRanges[2];
+	pci_resource_range	fRanges[4];
 	uint32			fRangeCount = 0;
 };
 
@@ -162,7 +170,7 @@ OpenFirmwarePCIController::InitDriver(device_node* node,
 
 	driver->fNode = node;
 
-	CHECK_RET(driver->InitGrackle());
+	CHECK_RET(driver->InitController());
 
 	outDriver = driver.Detach();
 	return B_OK;
@@ -177,36 +185,77 @@ OpenFirmwarePCIController::UninitDriver()
 
 
 status_t
-OpenFirmwarePCIController::InitGrackle()
+OpenFirmwarePCIController::InitController()
 {
-	// map the Grackle config register window (uncached device memory)
+	uint32 type = PCI_HOST_BRIDGE_GRACKLE;
+	phys_addr_t configAddrPhys = GRACKLE_CONFIG_ADDR;
+	phys_addr_t configDataPhys = GRACKLE_CONFIG_DATA;
+	ppc_get_pci_host_bridge(&type, &configAddrPhys, &configDataPhys);
+	fHostBridgeType = type;
+
+	// Map a window covering both config registers (uncached device memory).
+	phys_addr_t lo = configAddrPhys < configDataPhys
+		? configAddrPhys : configDataPhys;
+	phys_addr_t hi = configAddrPhys > configDataPhys
+		? configAddrPhys : configDataPhys;
+	phys_addr_t regsBase = lo & ~(phys_addr_t)(B_PAGE_SIZE - 1);
+	phys_addr_t regsEnd = (hi + sizeof(uint32) + B_PAGE_SIZE - 1)
+		& ~(phys_addr_t)(B_PAGE_SIZE - 1);
 	void* regs = NULL;
-	fRegsArea.SetTo(map_physical_memory("Grackle PCI config",
-		GRACKLE_REGS_BASE, GRACKLE_REGS_SIZE,
+	fRegsArea.SetTo(map_physical_memory("PCI host bridge config",
+		regsBase, regsEnd - regsBase,
 		B_ANY_KERNEL_ADDRESS | B_UNCACHED_MEMORY,
 		B_KERNEL_READ_AREA | B_KERNEL_WRITE_AREA, &regs));
 	CHECK_RET(fRegsArea.Get());
 
-	fConfigAddr = (addr_t)regs + (GRACKLE_CONFIG_ADDR - GRACKLE_REGS_BASE);
-	fConfigData = (addr_t)regs + (GRACKLE_CONFIG_DATA - GRACKLE_REGS_BASE);
+	fConfigAddr = (addr_t)regs + (addr_t)(configAddrPhys - regsBase);
+	fConfigData = (addr_t)regs + (addr_t)(configDataPhys - regsBase);
 
-	pci_resource_range& mmio = fRanges[fRangeCount++];
-	mmio = {};
-	mmio.type = B_IO_MEMORY;
-	mmio.address_type = PCI_address_type_32;
-	mmio.host_address = GRACKLE_MMIO_HOST_BASE;
-	mmio.pci_address = GRACKLE_MMIO_PCI_BASE;
-	mmio.size = GRACKLE_MMIO_SIZE;
+	if (fHostBridgeType == PCI_HOST_BRIDGE_UNINORTH) {
+		// UniNorth host-side windows (from the OF "ranges"). The main memory
+		// window is 1:1, so device BARs (incl. mac-io) are CPU-addressable.
+		pci_resource_range& mmio = fRanges[fRangeCount++];
+		mmio = {};
+		mmio.type = B_IO_MEMORY;
+		mmio.address_type = PCI_address_type_32;
+		mmio.host_address = 0x80000000;
+		mmio.pci_address = 0x80000000;
+		mmio.size = 0x10000000;
 
-	pci_resource_range& io = fRanges[fRangeCount++];
-	io = {};
-	io.type = B_IO_PORT;
-	io.host_address = GRACKLE_IO_HOST_BASE;
-	io.pci_address = GRACKLE_IO_PCI_BASE;
-	io.size = GRACKLE_IO_SIZE;
+		pci_resource_range& mmio2 = fRanges[fRangeCount++];
+		mmio2 = {};
+		mmio2.type = B_IO_MEMORY;
+		mmio2.address_type = PCI_address_type_32;
+		mmio2.host_address = 0xf3000000;
+		mmio2.pci_address = 0xf3000000;
+		mmio2.size = 0x01000000;
 
-	dprintf("of_pci: Grackle host bridge ready (config %#lx/%#lx)\n",
-		(addr_t)GRACKLE_CONFIG_ADDR, (addr_t)GRACKLE_CONFIG_DATA);
+		pci_resource_range& io = fRanges[fRangeCount++];
+		io = {};
+		io.type = B_IO_PORT;
+		io.host_address = 0xf2000000;
+		io.pci_address = 0x00000000;
+		io.size = 0x00800000;
+	} else {
+		pci_resource_range& mmio = fRanges[fRangeCount++];
+		mmio = {};
+		mmio.type = B_IO_MEMORY;
+		mmio.address_type = PCI_address_type_32;
+		mmio.host_address = GRACKLE_MMIO_HOST_BASE;
+		mmio.pci_address = GRACKLE_MMIO_PCI_BASE;
+		mmio.size = GRACKLE_MMIO_SIZE;
+
+		pci_resource_range& io = fRanges[fRangeCount++];
+		io = {};
+		io.type = B_IO_PORT;
+		io.host_address = GRACKLE_IO_HOST_BASE;
+		io.pci_address = GRACKLE_IO_PCI_BASE;
+		io.size = GRACKLE_IO_SIZE;
+	}
+
+	dprintf("of_pci: %s host bridge ready (config %#lx/%#lx)\n",
+		fHostBridgeType == PCI_HOST_BRIDGE_UNINORTH ? "UniNorth" : "Grackle",
+		(addr_t)configAddrPhys, (addr_t)configDataPhys);
 	return B_OK;
 }
 
@@ -218,13 +267,32 @@ void
 OpenFirmwarePCIController::SetConfigAddress(uint8 bus, uint8 device,
 	uint8 function, uint16 offset)
 {
-	uint32 address = 0x80000000 | ((uint32)bus << 16)
-		| ((uint32)device << 11) | ((uint32)function << 8) | (offset & 0xFC);
+	uint32 address;
+	if (fHostBridgeType == PCI_HOST_BRIDGE_UNINORTH) {
+		// UniNorth: bus 0 uses a 1-hot IDSEL in the high bits; other buses
+		// use type-1 config (low bit set).
+		if (bus == 0) {
+			address = (1u << device) | ((uint32)function << 8)
+				| (offset & 0xFC);
+		} else {
+			address = ((uint32)bus << 16) | ((uint32)device << 11)
+				| ((uint32)function << 8) | (offset & 0xFC) | 1;
+		}
+	} else {
+		address = 0x80000000 | ((uint32)bus << 16)
+			| ((uint32)device << 11) | ((uint32)function << 8)
+			| (offset & 0xFC);
+	}
 
-	// The Grackle runs little-endian: a byte-reversed store latches the
+	// Both bridges run PCI little-endian: a byte-reversed store latches the
 	// natural CONFIG_ADDR value (equivalent to PowerPC out_le32).
 	*(volatile uint32*)fConfigAddr = B_HOST_TO_LENDIAN_INT32(address);
 	asm volatile("eieio" ::: "memory");
+	if (fHostBridgeType == PCI_HOST_BRIDGE_UNINORTH) {
+		// UniNorth returns garbage unless the address register is read back.
+		(void)*(volatile uint32*)fConfigAddr;
+		asm volatile("eieio" ::: "memory");
+	}
 }
 
 
@@ -232,6 +300,11 @@ status_t
 OpenFirmwarePCIController::ReadConfig(uint8 bus, uint8 device, uint8 function,
 	uint16 offset, uint8 size, uint32& value)
 {
+	if (fHostBridgeType == PCI_HOST_BRIDGE_UNINORTH && bus == 0
+			&& device < 11) {
+		value = 0xffffffff;
+		return B_OK;
+	}
 	SetConfigAddress(bus, device, function, offset);
 
 	addr_t data = fConfigData + (offset & 3);
@@ -258,6 +331,10 @@ status_t
 OpenFirmwarePCIController::WriteConfig(uint8 bus, uint8 device, uint8 function,
 	uint16 offset, uint8 size, uint32 value)
 {
+	if (fHostBridgeType == PCI_HOST_BRIDGE_UNINORTH && bus == 0
+			&& device < 11) {
+		return B_OK;
+	}
 	SetConfigAddress(bus, device, function, offset);
 
 	addr_t data = fConfigData + (offset & 3);
