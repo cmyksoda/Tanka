@@ -178,9 +178,9 @@ rule DefineDefaultBuildProfiles
 		case "minimum-*" : {
 			Echo Building Haiku Minimum Target ;
 			HAIKU_IMAGE_HOST_NAME ?= shredder ;
-			if $(DEBUG) != 0 {
-				HAIKU_IMAGE_SIZE ?= 450 ;
-			}
+			# Larger than the 300 MB default to fit the bundled apps/demos/
+			# preferences added in images/definitions/minimum.
+			HAIKU_IMAGE_SIZE ?= 600 ;
 
 			# bash provides /bin/sh, needed by the launch_daemon "env
 			# /system/boot/SetupEnvironment" step that the desktop session

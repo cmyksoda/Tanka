@@ -184,6 +184,44 @@ SYSTEM_PREFERENCES = [ FFilterByBuildFeatures
 
 SYSTEM_DEMOS = ;
 
+# --- PowerPC port: bundle the Haiku demos and a curated set of applications
+# and preferences. Limited to targets that build with the libraries available
+# on ppc: there is no mesa (OpenGL), ffmpeg, or libpng/jpeg, so the GL demos
+# and the media/image-heavy apps are intentionally omitted. All items below
+# were verified to compile for ppc.
+SYSTEM_DEMOS += [ FFilterByBuildFeatures
+	Chart
+	Clock
+	FontDemo
+	Mandelbrot
+	OverlayImage
+	Pairs
+	Playground
+	Pulse
+	Sudoku
+] ;
+
+SYSTEM_APPS += [ FFilterByBuildFeatures
+	ActivityMonitor
+	AutoRaise
+	Icon-O-Matic@expat
+	LaunchBox
+	Magnify
+	People
+	PoorMan
+	PowerStatus
+	Screenshot
+	SerialConnect
+	SoundRecorder
+] ;
+
+SYSTEM_PREFERENCES += [ FFilterByBuildFeatures
+	DataTranslations
+	Repositories
+	ScreenSaver
+	Sounds
+] ;
+
 
 rule HaikuImageGetSystemLibs
 {
