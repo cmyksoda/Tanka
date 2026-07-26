@@ -182,7 +182,11 @@ rule DefineDefaultBuildProfiles
 				HAIKU_IMAGE_SIZE ?= 450 ;
 			}
 
+			# bash provides /bin/sh, needed by the launch_daemon "env
+			# /system/boot/SetupEnvironment" step that the desktop session
+			# services (app_server, Tracker, Deskbar) run.
 			AddHaikuImageSystemPackages
+				bash
 				openssl3
 				;
 		}
