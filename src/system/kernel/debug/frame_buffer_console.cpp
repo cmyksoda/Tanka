@@ -457,6 +457,21 @@ frame_buffer_update(addr_t baseAddress, int32 width, int32 height, int32 depth,
 }
 
 
+/*!	Stop the kernel frame buffer console from drawing to the screen. Called when
+	a graphics driver (app_server) takes over the frame buffer, so kernel debug
+	output no longer paints over the composited desktop. The console's drawing
+	hooks all early-return when frame_buffer == 0 (frame_buffer_console_available
+	is false), so this is a clean no-op switch; the mapping/area is left intact.
+*/
+void
+frame_buffer_console_disable(void)
+{
+	mutex_lock(&sConsole.lock);
+	sConsole.frame_buffer = 0;
+	mutex_unlock(&sConsole.lock);
+}
+
+
 #ifndef _BOOT_MODE
 status_t
 frame_buffer_console_init(kernel_args* args)
