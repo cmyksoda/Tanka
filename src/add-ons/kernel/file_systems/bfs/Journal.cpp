@@ -324,7 +324,7 @@ RunArrays::_ContainsRun(block_run& run)
 bool
 RunArrays::_AddRun(block_run& run)
 {
-	ASSERT(run.length == 1);
+	ASSERT(run.Length() == 1);
 
 	// Be's BFS log replay routine can only deal with block_runs of size 1
 	// A pity, isn't it? Too sad we have to be compatible.

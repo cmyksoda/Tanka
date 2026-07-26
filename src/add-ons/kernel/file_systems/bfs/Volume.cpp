@@ -179,11 +179,16 @@ status_t
 Volume::Mount(const char* deviceName, uint32 flags)
 {
 	// TODO: validate the FS in write mode as well!
-#if (B_HOST_IS_LENDIAN && defined(BFS_BIG_ENDIAN_ONLY)) \
-	|| (B_HOST_IS_BENDIAN && defined(BFS_LITTLE_ENDIAN_ONLY))
+#if ((B_HOST_IS_LENDIAN && defined(BFS_BIG_ENDIAN_ONLY)) \
+	|| (B_HOST_IS_BENDIAN && defined(BFS_LITTLE_ENDIAN_ONLY))) \
+	&& !defined(__POWERPC__)
 	// in big endian mode, we only mount read-only for now
 	flags |= B_MOUNT_READ_ONLY;
 #endif
+	// __POWERPC__: bfs_endian.h swaps symmetrically for read AND write on a
+	// byte-order-mismatched host, and BFS reads are known-good on ppc, so allow
+	// read-write here. The guard above is untested-caution, not a known write
+	// bug; without this the boot volume mounts read-only and nothing can save.
 
 	DeviceOpener opener(deviceName, (flags & B_MOUNT_READ_ONLY) != 0
 		? O_RDONLY : O_RDWR);
