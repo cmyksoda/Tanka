@@ -1,0 +1,7 @@
+SubDir HAIKU_TOP src add-ons kernel drivers audio macio ;
+
+UsePrivateHeaders audio ;
+
+KernelAddon macio_snd :
+	macio_snd.cpp
+	;
