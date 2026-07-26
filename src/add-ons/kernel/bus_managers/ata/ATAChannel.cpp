@@ -146,8 +146,21 @@ ATAChannel::ScanBus()
 {
 	uint deviceMask = 0;
 
-	for (int i = 0; i < fDeviceCount; i++)
-		deviceMask |= (int)_DevicePresent(i) << i;
+	// Real hardware (especially CF-on-IDE adapters) can be slow to respond
+	// right after power-on/reset; give the bus a moment to settle before we
+	// probe, or a marginal first response makes us miss the drive entirely
+	// and panic later with "did not find any boot partitions".
+	snooze(250 * 1000);
+
+	for (int i = 0; i < fDeviceCount; i++) {
+		bool present = false;
+		for (int retry = 0; retry < 5 && !present; retry++) {
+			present = _DevicePresent(i);
+			if (!present)
+				snooze(50 * 1000);
+		}
+		deviceMask |= (int)present << i;
+	}
 
 	status_t result = Reset();
 	if (result != B_OK) {
@@ -229,7 +242,15 @@ ATAChannel::ScanBus()
 
 		TRACE("trying ATA%s device %u\n", device->IsATAPI() ? "PI" : "", i);
 
-		if (device->Identify() != B_OK) {
+		bool identified = false;
+		for (int retry = 0; retry < 3 && !identified; retry++) {
+			if (device->Identify() == B_OK) {
+				identified = true;
+				break;
+			}
+			snooze(100 * 1000);
+		}
+		if (!identified) {
 			delete device;
 			continue;
 		}

@@ -59,18 +59,35 @@
 #define CHECK_RET(err) { status_t _err = (err); if (_err < B_OK) return _err; }
 
 
+// A mac-io ATA cell: its register-block offset within the mac-io register
+// space and its ATA (task-file) interrupt number. DMA is not used (PIO only),
+// so the separate DMA interrupt in the device tree is ignored.
+struct macio_ata_channel_def {
+	uint32	reg_offset;
+	uint8	irq;
+};
+
+#define MACIO_ATA_MAX_CHANNELS	3
+
 struct macio_ata_supported_device {
 	uint16	vendor_id;
 	uint16	device_id;
-	bool	two_channels;
+	uint8	channel_count;
+	macio_ata_channel_def channels[MACIO_ATA_MAX_CHANNELS];
 };
 
 static macio_ata_supported_device sSupportedDevices[] = {
-	{ 0x106b, 0x0002, false },	// Grand Central (1 channel)
-	{ 0x106b, 0x0010, true },	// Heathrow
-	{ 0x106b, 0x0017, true },	// Paddington
-	{ 0x106b, 0x0022, true },	// KeyLargo
-	{ 0, 0, false }
+	// Grand Central: a single ata-3 channel.
+	{ 0x106b, 0x0002, 1, {{ 0x20000, 0x0D }} },
+	// Heathrow / Paddington: two ata-3 channels (what dingusppc emulates).
+	{ 0x106b, 0x0010, 2, {{ 0x20000, 0x0D }, { 0x21000, 0x0E }} },
+	{ 0x106b, 0x0017, 2, {{ 0x20000, 0x0D }, { 0x21000, 0x0E }} },
+	// KeyLargo (Power Mac G4 etc.): the internal Ultra-ATA/66 bus is the OF
+	// "ata-4" cell at mac-io offset 0x1f000 (ATA IRQ 0x13) -- this is where the
+	// boot drive lives. The two legacy ata-3 cells (0x20000/0x21000) remain for
+	// optical / media-bay devices.
+	{ 0x106b, 0x0022, 1, {{ 0x1f000, 0x13 }} },
+	{ 0, 0, 0, {} }
 };
 
 
@@ -117,8 +134,10 @@ macio_ata_check_supported(uint16 vendorID, uint16 deviceID)
 static inline uint8
 macio_read_reg(macio_ata_channel_info* channel, int reg)
 {
-	return *(volatile uint8*)(channel->channel_base
+	uint8 value = *(volatile uint8*)(channel->channel_base
 		+ ((addr_t)reg << MACIO_ATA_REG_SHIFT));
+	asm volatile("eieio" ::: "memory");
+	return value;
 }
 
 
@@ -230,8 +249,10 @@ macio_ata_read_pio(void* cookie, uint16* data, int count, bool force16Bit)
 		return B_ERROR;
 
 	volatile uint16* dataReg = (volatile uint16*)channel->channel_base;
-	for (; count > 0; --count)
+	for (; count > 0; --count) {
 		*(data++) = *dataReg;
+		asm volatile("eieio" ::: "memory");
+	}
 
 	return B_OK;
 }
@@ -455,9 +476,9 @@ macio_ata_init_controller(device_node* node, void** cookie)
 	}
 	controller->register_base = (addr_t)virtualBase;
 
-	dprintf("macio_ata: controller at mac-io %#" B_PRIxPHYSADDR " (%d channel"
-		"%s)\n", physicalBase, controller->supported->two_channels ? 2 : 1,
-		controller->supported->two_channels ? "s" : "");
+	dprintf("macio_ata: controller at mac-io %#" B_PRIxPHYSADDR " (%u channel"
+		"%s)\n", physicalBase, controller->supported->channel_count,
+		controller->supported->channel_count == 1 ? "" : "s");
 
 	*cookie = controller;
 	return B_OK;
@@ -504,12 +525,10 @@ macio_ata_register_child_devices(void* cookie)
 	macio_ata_controller_info* controller
 		= (macio_ata_controller_info*)cookie;
 
-	CHECK_RET(macio_ata_publish_channel(controller->node,
-		MACIO_ATA_IDE0_OFFSET, MACIO_ATA_IDE0_IRQ, 0));
-
-	if (controller->supported->two_channels) {
-		CHECK_RET(macio_ata_publish_channel(controller->node,
-			MACIO_ATA_IDE1_OFFSET, MACIO_ATA_IDE1_IRQ, 1));
+	for (uint8 i = 0; i < controller->supported->channel_count; i++) {
+		const macio_ata_channel_def& def = controller->supported->channels[i];
+		CHECK_RET(macio_ata_publish_channel(controller->node, def.reg_offset,
+			def.irq, i));
 	}
 
 	return B_OK;
