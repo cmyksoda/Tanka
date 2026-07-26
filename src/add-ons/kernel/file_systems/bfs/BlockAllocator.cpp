@@ -279,7 +279,12 @@ AllocationBlock::NextFree(uint16 startBlock)
 
 	for (uint32 offset = ROUNDDOWN(startBlock, 32);
 			offset < fNumBits; offset += 32) {
-		uint32 chunk = Chunk(offset >> 5);
+		// The bitmap is stored on disk in little-endian order; read the 32-bit
+		// chunk in host order so the ignoreNext mask and ffs() below (both host
+		// order) are correct on big-endian hosts. Without this NextFree() can
+		// return the same bit it was given, causing AllocateBlocks() to spin
+		// forever while holding the volume transaction lock. (No-op on x86.)
+		uint32 chunk = BFS_ENDIAN_TO_HOST_INT32(Chunk(offset >> 5));
 		chunk |= ignoreNext;
 		ignoreNext = 0;
 
