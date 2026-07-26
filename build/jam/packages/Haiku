@@ -295,8 +295,15 @@ fortuneFiles = $(fortuneFiles:G=data!fortunes) ;
 AddFilesToPackage data fortunes : $(fortuneFiles) ;
 
 local fontDir = [ FDirName $(HAIKU_TOP) data system data fonts ] ;
-local psFonts = [ Glob $(fontDir)/psfonts : *.afm *.pfb ] ;
-AddFilesToPackage data fonts psfonts : $(psFonts) ;
+# PowerPC: skip the Bitstream Charter Type 1 (.pfb) fonts. FreeType 2.6.3's
+# Type 1 parser (parse_subrs -> skip_spaces) hangs on these on big-endian
+# ppc while holding the app_server GlobalFontManager lock, which deadlocks the
+# whole desktop (opening any window that draws text blocks forever). Noto
+# provides full coverage without them.
+if $(HAIKU_PACKAGING_ARCH) != ppc {
+	local psFonts = [ Glob $(fontDir)/psfonts : *.afm *.pfb ] ;
+	AddFilesToPackage data fonts psfonts : $(psFonts) ;
+}
 
 # keymaps
 AddFilesToPackage data Keymaps : $(HAIKU_KEYMAP_FILES) ;
