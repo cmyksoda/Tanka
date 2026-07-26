@@ -303,10 +303,26 @@ dprintf("handling I/O interrupts done\n");
 
 				disable_interrupts();
 
-				// Return value goes back in r3 (low 32 bits). The common
-				// status_t/ssize_t case is 32-bit and must land in r3; 64-bit
-				// returns (off_t, bigtime_t) are truncated for now.
-				iframe->r3 = (uint32)returnValue;
+				// Store the return value per the 32-bit PPC SysV ABI: a
+				// 32-bit result (status_t/ssize_t) is returned in r3, while a
+				// 64-bit result (off_t, bigtime_t) uses the r3:r4 pair with
+				// r3 = high word and r4 = low word. Previously only r3 was
+				// written (with the low word) and r4 was left stale, so every
+				// off_t/bigtime_t-returning syscall handed userland a garbage
+				// 64-bit value (e.g. BFile::Seek() to a non-zero offset, which
+				// broke callers that check the returned position).
+				// _kern_restore_signal_frame is special: it has already
+				// rebuilt the whole user iframe (including r4) from the signal
+				// context and returns the restored r3, so it must only refresh
+				// r3 and leave r4 alone - splitting it would clobber the
+				// restored r4 and corrupt every signal return.
+				if (kExtendedSyscallInfos[syscall].return_type.size > 4
+					&& syscall != SYSCALL_RESTORE_SIGNAL_FRAME) {
+					iframe->r3 = (uint32)(returnValue >> 32);
+					iframe->r4 = (uint32)returnValue;
+				} else {
+					iframe->r3 = (uint32)returnValue;
+				}
 			} else {
 				iframe->r3 = (uint32)B_BAD_VALUE;
 			}
