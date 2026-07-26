@@ -302,6 +302,14 @@ relocate_rela(image_t* rootImage, image_t* image, Elf32_Rela* rel,
 					type);
 				return B_BAD_DATA;
 		}
+
+		// On the out-of-order PPC the I-cache is not coherent with the D-cache,
+		// so a relocation that patched an instruction (the ADDR16_*/ADDR24/REL24
+		// immediates and branches) must be flushed or the CPU executes the stale,
+		// un-patched instruction and computes a garbage pointer. JMP_SLOT already
+		// syncs itself; NONE writes nothing.
+		if (type != R_PPC_NONE && type != R_PPC_JMP_SLOT)
+			sync_icache_for_relocation(P, sizeof(uint32));
 	}
 
 	return B_OK;

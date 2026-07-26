@@ -533,6 +533,19 @@ dprintf("R_PPC_SECTOFF overflow\n");
 				dprintf("arch_elf_relocate_rela: unhandled relocation type %d\n", ELF32_R_TYPE(rel[i].r_info));
 				return B_ERROR;
 		}
+
+		// The out-of-order PPC I-cache is not coherent with the D-cache, so a
+		// relocation that patched an instruction must be flushed or the CPU runs
+		// the stale, un-patched instruction (illegal opcode at a relocated
+		// branch, or a garbage pointer from a stale lis/addi). This is why a
+		// kernel add-on could crash with an illegal instruction at a function
+		// start on the real G4 but never on the emulator. JMP_SLOT syncs itself;
+		// NONE writes nothing.
+		{
+			uint32 relocType = ELF32_R_TYPE(rel[i].r_info);
+			if (relocType != R_PPC_NONE && relocType != R_PPC_JMP_SLOT)
+				sync_icache_for_relocation(P, sizeof(uint32));
+		}
 	}
 
 	return B_NO_ERROR;
