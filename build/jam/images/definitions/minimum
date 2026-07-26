@@ -316,6 +316,7 @@ SYSTEM_ADD_ONS_ACCELERANTS = [ FFilterByBuildFeatures
 
 SYSTEM_ADD_ONS_TRANSLATORS =
 	STXTTranslator
+	PNGTranslator@libpng
 ;
 
 SYSTEM_ADD_ONS_LOCALE_CATALOGS =
@@ -490,3 +491,8 @@ for repository in $(HAIKU_REPOSITORIES) {
 	AddFilesToHaikuImage system cache package-repositories
 		: $(cache) : $(repository:G=) ;
 }
+
+# NetSurf web browser (prebuilt, cross-built for ppc) - dropped into the
+# writable non-packaged apps dir so no packagefs activation is needed.
+CopyDirectoryToHaikuImage home config non-packaged
+	: [ FDirName / work netsurf-build nspkg apps ] : apps ;
