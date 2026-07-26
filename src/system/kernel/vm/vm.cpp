@@ -3600,8 +3600,21 @@ reserve_boot_loader_ranges(kernel_args* args)
 
 		status_t status = vm_reserve_address_range(VMAddressSpace::KernelID(),
 			&address, B_EXACT_ADDRESS, range.size, 0);
-		if (status < B_OK)
-			panic("could not reserve boot loader ranges\n");
+		if (status < B_OK) {
+			// A B_EXACT_ADDRESS reservation can only fail this early in VM
+			// init if the range is already reserved. That happens when the
+			// boot loader recorded a duplicate/overlapping virtual range - a
+			// sub-range already covered by a larger recorded range. This was
+			// observed on real PowerMac hardware (e.g. a Blue & White G3),
+			// whose Open Firmware exposes translations that the ppc loader
+			// records as a range already contained in a bigger one; the
+			// emulator's minimal OF does not. The address space is protected
+			// by the covering range either way, so this is harmless - warn
+			// and continue instead of panicking so boot can proceed.
+			dprintf("reserve_boot_loader_ranges(): range %p, %" B_PRIu64
+				" already reserved (status 0x%08" B_PRIx32 "); skipping\n",
+				address, range.size, (uint32)status);
+		}
 	}
 }
 
