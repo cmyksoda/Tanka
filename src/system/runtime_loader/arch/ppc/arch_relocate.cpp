@@ -136,20 +136,58 @@ allocate_trampoline(image_t* image, TrampolinePool* pool, size_t maxCount)
 		size_t size = maxCount * 4 * sizeof(uint32);
 		size = (size + B_PAGE_SIZE - 1) & ~(size_t)(B_PAGE_SIZE - 1);
 
-		// Ask for the area at-or-above the image's load base so it lands right
-		// after the image - within a single branch's reach of the PLT.
-		void* address = (void*)image->regions[0].vmstart;
-		area_id area = _kern_create_area("rld:plt_trampolines", &address,
-			B_BASE_ADDRESS, size, B_NO_LOCK,
-			B_READ_AREA | B_WRITE_AREA | B_EXECUTE_AREA);
-		if (area < 0) {
-			printf("runtime_loader: failed to allocate PLT trampoline pool: "
-				"%" B_PRId32 "\n", (status_t)area);
+		// The pool must land within a single branch's reach (+/-32 MB) of
+		// every PLT slot, or the "b <island>" written into a slot cannot reach
+		// the island. B_BASE_ADDRESS only searches UPWARD from the given
+		// address, and by relocation time the space right after the image is
+		// often already taken by other libraries, so a single attempt can land
+		// far away - the intermittent "trampoline out of branch range" failures
+		// that poison boots. Compute the image span and try the base just above
+		// the image, then progressively lower bases, keeping the first result
+		// that is actually within range (free gaps below the image are common).
+		addr_t imageStart = image->regions[0].vmstart;
+		addr_t imageEnd = imageStart;
+		for (uint32 r = 0; r < image->num_regions; r++) {
+			addr_t end = image->regions[r].vmstart + image->regions[r].vmsize;
+			if (end > imageEnd)
+				imageEnd = end;
+		}
+		// Keep every slot (in [imageStart, imageEnd)) within +/-32 MB of the
+		// island, with a 1 MB safety margin.
+		addr_t span = imageEnd - imageStart;
+		addr_t maxDist = (addr_t)0x02000000 - span - 0x100000;
+
+		void* result = NULL;
+		for (int attempt = 0; attempt < 16 && result == NULL; attempt++) {
+			addr_t base;
+			if (attempt == 0) {
+				base = imageStart;
+			} else {
+				addr_t down = (addr_t)attempt * (2 * 1024 * 1024);
+				base = imageStart > down ? imageStart - down : B_PAGE_SIZE;
+			}
+			void* address = (void*)base;
+			area_id area = _kern_create_area("rld:plt_trampolines", &address,
+				B_BASE_ADDRESS, size, B_NO_LOCK,
+				B_READ_AREA | B_WRITE_AREA | B_EXECUTE_AREA);
+			if (area < 0)
+				continue;
+			addr_t got = (addr_t)address;
+			addr_t dist = got > imageStart ? got - imageStart : imageStart - got;
+			if (dist <= maxDist)
+				result = address;
+			else
+				_kern_delete_area(area);
+		}
+
+		if (result == NULL) {
+			printf("runtime_loader: no PLT trampoline pool within branch range "
+				"of %s\n", image->path);
 			return NULL;
 		}
 
-		pool->next = (uint32*)address;
-		pool->end = (uint32*)((addr_t)address + size);
+		pool->next = (uint32*)result;
+		pool->end = (uint32*)((addr_t)result + size);
 	}
 
 	if (pool->next + 4 > pool->end)
