@@ -17,78 +17,11 @@
 
 #include <Palette.h>
 
+#include "SystemPaletteMap.h"
+
 // TODO: BWindowScreen has a method to set the palette.
 // maybe we should have a lock to protect this variable.
 static color_map sColorMap;
-
-
-// color_distance
-/*!	\brief Returns the "distance" between two RGB colors.
-
-	This functions defines an metric on the RGB color space. The distance
-	between two colors is 0, if and only if the colors are equal.
-
-	\param red1 Red component of the first color.
-	\param green1 Green component of the first color.
-	\param blue1 Blue component of the first color.
-	\param red2 Red component of the second color.
-	\param green2 Green component of the second color.
-	\param blue2 Blue component of the second color.
-	\return The distance between the given colors.
-*/
-static inline uint32
-color_distance(uint8 red1, uint8 green1, uint8 blue1,
-			   uint8 red2, uint8 green2, uint8 blue2)
-{
-	int rd = (int)red1 - (int)red2;
-	int gd = (int)green1 - (int)green2;
-	int bd = (int)blue1 - (int)blue2;
-
-	// distance according to psycho-visual tests
-	// algorithm taken from here:
-	// http://www.stud.uni-hannover.de/~michaelt/juggle/Algorithms.pdf
-	int rmean = ((int)red1 + (int)red2) / 2;
-	return (((512 + rmean) * rd * rd) >> 8)
-			+ 4 * gd * gd
-			+ (((767 - rmean) * bd * bd) >> 8);
-}
-
-
-static inline uint8
-FindClosestColor(const rgb_color &color, const rgb_color *palette)
-{
-	uint8 closestIndex = 0;
-	unsigned closestDistance = UINT_MAX;
-	for (int32 i = 0; i < 256; i++) {
-		const rgb_color &c = palette[i];
-		unsigned distance = color_distance(color.red, color.green, color.blue,
-										   c.red, c.green, c.blue);
-		if (distance < closestDistance) {
-			closestIndex = (uint8)i;
-			closestDistance = distance;
-		}
-	}
-	return closestIndex;
-}
-
-
-static inline rgb_color
-InvertColor(const rgb_color &color)
-{
-	// For some reason, Inverting (255, 255, 255) on beos
-	// results in the same color.
-	if (color.red == 255 && color.green == 255
-		&& color.blue == 255)
-		return color;
-
-	rgb_color inverted;
-	inverted.red = 255 - color.red;
-	inverted.green = 255 - color.green;
-	inverted.blue = 255 - color.blue;
-	inverted.alpha = 255;
-
-	return inverted;
-}
 
 
 static void
@@ -96,22 +29,16 @@ FillColorMap(const rgb_color *palette, color_map *map)
 {
 	memcpy((void*)map->color_list, palette, sizeof(map->color_list));
 
-	// init index map
-	for (int32 color = 0; color < 32768; color++) {
-		// get components
-		rgb_color rgbColor;
-		rgbColor.red = (color & 0x7c00) >> 7;
-		rgbColor.green = (color & 0x3e0) >> 2;
-		rgbColor.blue = (color & 0x1f) << 3;
-
-		map->index_map[color] = FindClosestColor(rgbColor, palette);
-	}
-
-	// init inversion map
-	for (int32 index = 0; index < 256; index++) {
-		rgb_color inverted = InvertColor(map->color_list[index]);
-		map->inversion_map[index] = FindClosestColor(inverted, palette);
-	}
+	// The index_map (nearest palette entry for every RGB15 color) and the
+	// inversion_map depend ONLY on the compile-time-constant system palette,
+	// so they are precomputed at build time (see generate_palette_map.cpp ->
+	// SystemPaletteMap.h). Computing them here was an 8.4M-iteration
+	// nearest-color search (32768 * 256) that cost ~22s at every app_server
+	// startup on slow/emulated PowerPC. The tables are byte-for-byte identical
+	// to the former runtime result.
+	memcpy(map->index_map, kSystemColorMapIndex, sizeof(map->index_map));
+	memcpy(map->inversion_map, kSystemColorMapInversion,
+		sizeof(map->inversion_map));
 }
 
 
