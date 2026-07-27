@@ -384,6 +384,10 @@ SYSTEM_ADD_ONS_DRIVERS_NET = [ FFilterByBuildFeatures
 		vt612x
 	}@ # x86,x86_64,riscv64
 
+	ppc @{
+		gem
+	}@ # ppc
+
 	etherpci
 	usb_davicom
 	usb_rndis

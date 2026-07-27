@@ -95,6 +95,20 @@ pci_get_device(device_t dev)
 }
 
 
+uint8_t
+pci_get_intpin(device_t dev)
+{
+	return pci_read_config(dev, PCI_interrupt_pin, 1);
+}
+
+
+void
+pci_set_intpin(device_t dev, uint8_t pin)
+{
+	pci_write_config(dev, PCI_interrupt_pin, pin, 1);
+}
+
+
 uint16_t
 pci_get_subvendor(device_t dev)
 {

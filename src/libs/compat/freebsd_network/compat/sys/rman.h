@@ -53,6 +53,7 @@ struct resource {
 
 bus_space_handle_t rman_get_bushandle(struct resource *);
 bus_space_tag_t rman_get_bustag(struct resource *);
+void rman_set_bustag(struct resource *, bus_space_tag_t);
 int rman_get_rid(struct resource *);
 void* rman_get_virtual(struct resource *);
 bus_addr_t rman_get_start(struct resource *);

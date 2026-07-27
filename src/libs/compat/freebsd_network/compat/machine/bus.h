@@ -12,6 +12,8 @@
 #  include <machine/x86/bus.h>
 #elif (defined(__riscv) && __riscv_xlen == 64)
 #  include <machine/generic/bus.h>
+#elif defined(__powerpc__)
+#  include <machine/generic/bus.h>
 #else
 #  error Need a bus.h for this arch!
 #endif

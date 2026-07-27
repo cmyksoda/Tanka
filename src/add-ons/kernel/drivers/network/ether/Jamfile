@@ -2,6 +2,7 @@ SubDir HAIKU_TOP src add-ons kernel drivers network ether ;
 
 # Haiku-native drivers
 HaikuSubInclude etherpci ;
+HaikuSubInclude gem ;
 HaikuSubInclude virtio ;
 HaikuSubInclude usb_davicom ;
 HaikuSubInclude usb_ecm ;

@@ -20,6 +20,16 @@
 /* The version this compatibility layer is based on */
 #define __FreeBSD_version 1200086
 
+#ifndef PAGE_SIZE
+#define PAGE_SIZE B_PAGE_SIZE
+#endif
+#ifndef PAGE_MASK
+#define PAGE_MASK (B_PAGE_SIZE - 1)
+#endif
+#ifndef PAGE_SHIFT
+#define PAGE_SHIFT 12
+#endif
+
 #define MAXBSIZE	0x10000
 
 #define PAGE_SHIFT	12

@@ -282,6 +282,13 @@ rman_get_bustag(struct resource *res)
 }
 
 
+void
+rman_set_bustag(struct resource *res, bus_space_tag_t tag)
+{
+	res->r_bustag = tag;
+}
+
+
 int
 rman_get_rid(struct resource *res)
 {
