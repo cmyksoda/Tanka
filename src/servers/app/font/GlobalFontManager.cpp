@@ -23,6 +23,7 @@
 #include <FindDirectory.h>
 #include <Message.h>
 #include <NodeMonitor.h>
+#include <OS.h>
 #include <Path.h>
 #include <String.h>
 
@@ -108,7 +109,8 @@ GlobalFontManager::GlobalFontManager()
 	fDefaultBoldFont(NULL),
 	fDefaultFixedFont(NULL),
 
-	fScanned(false)
+	fScanned(false),
+	fScanning(false)
 {
 	fInitStatus = FT_Init_FreeType(&gFreeTypeLibrary) == 0 ? B_OK : B_ERROR;
 	if (fInitStatus == B_OK) {
@@ -676,7 +678,7 @@ GlobalFontManager::_AddUserPaths()
 void
 GlobalFontManager::_ScanFontsIfNecessary()
 {
-	if (!fScanned)
+	if (!fScanned && !fScanning)
 		_ScanFonts();
 }
 
@@ -685,8 +687,21 @@ GlobalFontManager::_ScanFontsIfNecessary()
 void
 GlobalFontManager::_ScanFonts()
 {
-	if (fScanned)
+	if (fScanned || fScanning)
 		return;
+	fScanning = true;
+
+	// The startup scan is CPU-heavy (FreeType parses every installed font). On
+	// a single-core machine at normal priority it starves the starting desktop
+	// even with the font lock yielded per-font below, so run it at low
+	// priority: the desktop servers (normal priority) preempt it and come up
+	// promptly, while the scan finishes on otherwise-idle CPU.
+	thread_id scanThread = find_thread(NULL);
+	thread_info scanInfo;
+	int32 oldPriority = B_NORMAL_PRIORITY;
+	if (get_thread_info(scanThread, &scanInfo) == B_OK)
+		oldPriority = scanInfo.priority;
+	set_thread_priority(scanThread, B_LOW_PRIORITY);
 
 	for (int32 i = fDirectories.CountItems(); i-- > 0;) {
 		font_directory* directory = fDirectories.ItemAt(i);
@@ -698,6 +713,8 @@ GlobalFontManager::_ScanFonts()
 	}
 
 	fScanned = true;
+	fScanning = false;
+	set_thread_priority(scanThread, oldPriority);
 }
 
 
@@ -953,6 +970,16 @@ GlobalFontManager::_ScanFontDirectory(font_directory& fontDirectory)
 
 		_AddFont(fontDirectory, entry);
 			// takes over ownership of the FT_Face object
+
+		// Briefly release the font-manager lock between fonts. The scan is slow
+		// on old/emulated hardware, and holding the lock across the whole scan
+		// blocks every ServerApp that needs a font -- so the desktop cannot
+		// appear until it finishes. The default fonts are already precached, so
+		// yielding here lets the desktop come up while the rest scans in the
+		// background. _ScanFontsIfNecessary()'s fScanning guard keeps a lookup
+		// during the scan from starting a second, re-entrant scan.
+		Unlock();
+		Lock();
 	}
 
 	fontDirectory.scanned = true;

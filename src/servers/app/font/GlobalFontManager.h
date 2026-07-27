@@ -119,6 +119,7 @@ private:
 								fDefaultFixedFont;
 
 			bool				fScanned;
+			bool				fScanning;
 
 };
 
