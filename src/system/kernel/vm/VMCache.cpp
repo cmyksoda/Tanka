@@ -697,9 +697,18 @@ VMCache::Delete()
 			// bring-up port, drop the page from the cache WITHOUT freeing it
 			// (leak it, leaving its mappings valid) so teardown completes and
 			// the kernel survives.
-			dprintf("VMCache::Delete: page %p in cache %p still has mappings "
-				"(wired %" B_PRId32 ") at teardown; leaking to avoid panic\n",
-				page, this, page->WiredCount());
+			// Log only the first occurrence per boot: dprintf() writes
+			// synchronously to the (slow) serial console, and this path can
+			// fire once per stuck page across every team teardown, so a burst
+			// of writes adds latency during bring-up. One warning is enough to
+			// know the workaround is active; the rest are counted silently.
+			static int32 sLeakedPages = 0;
+			if (atomic_add(&sLeakedPages, 1) == 0) {
+				dprintf("VMCache::Delete: a ppc teardown left a page still "
+					"mapped; leaking it to avoid a kernel panic (see "
+					"PPCVMTranslationMapClassic::UnmapArea). Further "
+					"occurrences this boot are counted silently.\n");
+			}
 			pages.Remove(page);
 			page->SetCacheRef(NULL);
 			page_count--;
