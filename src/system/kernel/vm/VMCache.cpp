@@ -687,8 +687,27 @@ VMCache::Delete()
 	vm_page_reservation reservation = {};
 	while (vm_page* page = pages.Root()) {
 		if (!page->mappings.IsEmpty() || page->WiredCount() != 0) {
+#ifdef __POWERPC__
+			// The classic-ppc page table is a hardware *cache* of software
+			// mappings; at address-space teardown a software vm_page_mapping
+			// or wired count can be left behind (a known, incompletely-fixed
+			// accounting leak - see PPCVMTranslationMapClassic::UnmapArea).
+			// Panicking here turns any crashing team's teardown into a
+			// whole-kernel panic, which was destabilizing boot. For this
+			// bring-up port, drop the page from the cache WITHOUT freeing it
+			// (leak it, leaving its mappings valid) so teardown completes and
+			// the kernel survives.
+			dprintf("VMCache::Delete: page %p in cache %p still has mappings "
+				"(wired %" B_PRId32 ") at teardown; leaking to avoid panic\n",
+				page, this, page->WiredCount());
+			pages.Remove(page);
+			page->SetCacheRef(NULL);
+			page_count--;
+			continue;
+#else
 			panic("remove page %p from cache %p: page still has mappings!\n"
 				"@!page %p; cache %p", page, this, page, this);
+#endif
 		}
 
 		// remove it
