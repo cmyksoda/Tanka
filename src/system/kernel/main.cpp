@@ -12,6 +12,7 @@
 
 
 #include <string.h>
+#include <stdio.h>
 
 #include <FindDirectory.h>
 #include <OS.h>
@@ -83,6 +84,9 @@ static uint32 sCpuRendezvous2;
 static uint32 sCpuRendezvous3;
 
 static int32 main2(void *);
+
+// kernel boot-latency profiler (thread.cpp)
+extern void ppc_start_boot_profiler();
 
 
 static void
@@ -313,6 +317,7 @@ main2(void* /*unused*/)
 	start_system_profiler(SYSTEM_PROFILE_SIZE, SYSTEM_PROFILE_STACK_DEPTH,
 		SYSTEM_PROFILE_INTERVAL);
 #endif
+	dprintf("BOOTPROF: main2-start @ %lld ms\n", system_time() / 1000);
 	boot_splash_init(sKernelArgs.boot_splash, sKernelArgs.boot_splash_logo);
 
 	commpage_init_post_cpus();
@@ -350,6 +355,7 @@ main2(void* /*unused*/)
 
 	TRACE("Init Device Manager\n");
 	boot_splash_set_stage(BOOT_SPLASH_STAGE_3_INIT_DEVICES);
+	dprintf("BOOTPROF: pre-devicemgr @ %lld ms\n", system_time() / 1000);
 	device_manager_init(&sKernelArgs);
 
 	TRACE("Add preloaded old-style drivers\n");
@@ -359,7 +365,9 @@ main2(void* /*unused*/)
 
 	TRACE("Mount boot file system\n");
 	boot_splash_set_stage(BOOT_SPLASH_STAGE_4_MOUNT_BOOT_FS);
+	dprintf("BOOTPROF: pre-mount @ %lld ms\n", system_time() / 1000);
 	vfs_mount_boot_file_system(&sKernelArgs);
+	dprintf("BOOTPROF: post-mount @ %lld ms\n", system_time() / 1000);
 
 #if ENABLE_SWAP_SUPPORT
 	TRACE("swap_init_post_modules\n");
@@ -420,6 +428,9 @@ main2(void* /*unused*/)
 				args[0], thread);
 		}
 	}
+
+	dprintf("BOOTPROF: launch_daemon-launched @ %lld ms\n", system_time() / 1000);
+	ppc_start_boot_profiler();
 
 	return 0;
 }

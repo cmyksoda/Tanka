@@ -29,6 +29,9 @@
 #include <util/ThreadAutoLock.h>
 
 #include <arch/debug.h>
+#ifdef __POWERPC__
+#	include <arch_cpu.h>	// BOOTPROF: iframe + MSR_PRIVILEGE_LEVEL
+#endif
 #include <boot/kernel_args.h>
 #include <condition_variable.h>
 #include <cpu.h>
@@ -50,6 +53,7 @@
 #include <vfs.h>
 #include <vm/vm.h>
 #include <vm/VMAddressSpace.h>
+#include <vm/VMArea.h>	// BOOTPROF: image+offset resolution of userland PCs
 #include <wait_for_objects.h>
 
 #include "TeamThreadTables.h"
@@ -2083,6 +2087,158 @@ update_thread_sigmask_on_exit(Thread* thread)
 		thread->flags &= ~THREAD_FLAGS_OLD_SIGMASK;
 		sigprocmask(SIG_SETMASK, &thread->old_sig_block_mask, NULL);
 	}
+}
+
+
+// Resolve a userland address to "<image area>+offset" the way debug_server
+// does, by looking it up in the target team's address space. Turns raw
+// ASLR-shifted PCs into something addr2line can map against the on-disk binary.
+// Must be called with no locks held (Get()/ReadLock() take their own).
+static void
+bootprof_resolve(team_id team, uint32 addr, char* buf, size_t len)
+{
+	buf[0] = '\0';
+	if (addr == 0)
+		return;
+	VMAddressSpace* space = VMAddressSpace::Get(team);
+	if (space == NULL) {
+		snprintf(buf, len, "%#" B_PRIx32, addr);
+		return;
+	}
+	space->ReadLock();
+	VMArea* area = space->LookupArea((addr_t)addr);
+	if (area != NULL) {
+		snprintf(buf, len, "%s+%#" B_PRIxADDR, area->name,
+			(addr_t)addr - area->Base());
+	} else
+		snprintf(buf, len, "%#" B_PRIx32, addr);
+	space->ReadUnlock();
+	space->Put();
+}
+
+
+// BOOTPROF: kernel-side boot-latency profiler. Logs a boot-relative
+// timestamp for each key service thread as it appears and for Tracker/
+// Deskbar reaching their idle message loop, giving a timeline of userland
+// bring-up with no per-server instrumentation.
+// Polls the thread list and logs, with a boot-relative timestamp, the first
+// appearance of each key service thread and the first time Tracker/Deskbar
+// reach their idle message loop (libbe BLooper::ReadRawFromPort, uLR offset
+// +0x11cca0). No per-server instrumentation needed; system_time() is a single
+// boot-relative clock shared by every team.
+struct BootMilestone {
+	const char*	match;		// substring of a thread name
+	bool		mainOnly;	// require the team main thread (id == team)
+	bool		idle;		// fire on ReadRawFromPort, else on first appearance
+	bool		done;
+	const char*	label;
+};
+
+static BootMilestone sBootMilestones[] = {
+	{ "roster",            true,  false, false, "registrar" },
+	{ "app_server",        true,  false, false, "app_server" },
+	{ "net_server",        true,  false, false, "net_server" },
+	{ "GlobalFontManager", false, false, false, "fontmgr-thread" },
+	{ "input_server",      true,  false, false, "input_server" },
+	{ "media_server",      true,  false, false, "media_server" },
+	{ "Deskbar",           true,  false, false, "Deskbar-seen" },
+	{ "Tracker",           true,  false, false, "Tracker-seen" },
+	{ "Tracker",           true,  true,  false, "Tracker-READY" },
+	{ "Deskbar",           true,  true,  false, "Deskbar-READY" },
+};
+
+struct BootSnap {
+	thread_id	id;
+	team_id		team;
+	char		name[64];
+	uint32		uLR;
+	bool		haveUser;
+};
+
+static bool
+bootprof_poll()
+{
+	static BootSnap sBoot[512];
+	int count = 0;
+	{
+		InterruptsReadSpinLocker locker(sThreadHashLock);
+		for (ThreadHashTable::Iterator it = sThreadHash.GetIterator();
+				Thread* thread = it.Next();) {
+			if (count >= 512)
+				break;
+			BootSnap& s = sBoot[count++];
+			s.id = thread->id;
+			s.team = thread->team != NULL ? thread->team->id : -1;
+			strlcpy(s.name, thread->name, sizeof(s.name));
+			s.uLR = 0;
+			s.haveUser = false;
+#ifdef __POWERPC__
+			for (int32 fi = thread->arch_info.iframes.index - 1; fi >= 0; fi--) {
+				struct iframe* f = thread->arch_info.iframes.frames[fi];
+				if ((f->srr1 & MSR_PRIVILEGE_LEVEL) != 0) {
+					s.uLR = f->lr;
+					s.haveUser = true;
+					break;
+				}
+			}
+#endif
+		}
+	}
+
+	bigtime_t now = system_time() / 1000;
+	bool allReadyDone = true;
+	const int milestones = sizeof(sBootMilestones) / sizeof(sBootMilestones[0]);
+	for (int m = 0; m < milestones; m++) {
+		BootMilestone& ms = sBootMilestones[m];
+		if (!ms.done) {
+			for (int i = 0; i < count; i++) {
+				BootSnap& s = sBoot[i];
+				if (strstr(s.name, ms.match) == NULL)
+					continue;
+				if (ms.mainOnly && s.id != s.team)
+					continue;
+				if (ms.idle) {
+					if (!s.haveUser)
+						continue;
+					char sym[80];
+					bootprof_resolve(s.team, s.uLR, sym, sizeof(sym));
+					if (strstr(sym, "+0x11cca0") == NULL)
+						continue;	// not in the idle looper yet
+				}
+				dprintf("BOOTPROF: %-16s @ %lld ms\n", ms.label, now);
+				ms.done = true;
+				break;
+			}
+		}
+		if (ms.idle && !ms.done)
+			allReadyDone = false;
+	}
+	return allReadyDone;
+}
+
+
+static int32
+bootprof_thread(void*)
+{
+	dprintf("BOOTPROF: profiler-start @ %lld ms\n", system_time() / 1000);
+	snooze(8000000);	// let early boot start
+	for (int iter = 0; iter < 120; iter++) {	// ~8s + 120*2s window
+		if (bootprof_poll())
+			break;		// Tracker + Deskbar both reached their idle loop
+		snooze(2000000);
+	}
+	dprintf("BOOTPROF: profiler done @ %lld ms\n", system_time() / 1000);
+	return 0;
+}
+
+
+void
+ppc_start_boot_profiler()
+{
+	thread_id thread = spawn_kernel_thread(&bootprof_thread,
+		"boot profiler", B_LOW_PRIORITY, NULL);
+	if (thread >= 0)
+		resume_thread(thread);
 }
 
 
