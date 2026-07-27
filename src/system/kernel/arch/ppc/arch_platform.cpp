@@ -363,9 +363,22 @@ PPCUBoot::ShutDown(bool reboot)
 static char *sPPCPlatformBuffer[PLATFORM_BUFFER_SIZE];
 
 // PCI host bridge info, captured by the boot loader (see arch_kernel_args).
+// Legacy single-bridge fields mirror bridge 0 (the boot bridge).
 static uint32 sPCIHostBridgeType = 0;
 static phys_addr_t sPCIConfigAddress = 0xfec00000;
 static phys_addr_t sPCIConfigData = 0xfee00000;
+
+// All PCI host bridges (a Power Mac G4 has several UniNorth buses).
+static uint32 sPCIHostBridgeCount = 0;
+static struct {
+	uint32		type;
+	phys_addr_t	configAddress;
+	phys_addr_t	configData;
+} sPCIHostBridges[MAX_PCI_HOST_BRIDGES];
+
+static uint32 sGmacIRQ = 0;
+static uint8 sGmacMAC[6] = { 0, 0, 0, 0, 0, 0 };
+static bool sGmacMACValid = false;
 
 
 extern "C" void
@@ -375,6 +388,40 @@ ppc_get_pci_host_bridge(uint32* type, phys_addr_t* configAddress,
 	*type = sPCIHostBridgeType;
 	*configAddress = sPCIConfigAddress;
 	*configData = sPCIConfigData;
+}
+
+extern "C" uint32
+ppc_get_pci_host_bridge_count()
+{
+	return sPCIHostBridgeCount;
+}
+
+extern "C" status_t
+ppc_get_pci_host_bridge_at(uint32 index, uint32* type,
+	phys_addr_t* configAddress, phys_addr_t* configData)
+{
+	if (index >= sPCIHostBridgeCount)
+		return B_BAD_INDEX;
+	*type = sPCIHostBridges[index].type;
+	*configAddress = sPCIHostBridges[index].configAddress;
+	*configData = sPCIHostBridges[index].configData;
+	return B_OK;
+}
+
+extern "C" uint32
+ppc_get_gmac_irq()
+{
+	return sGmacIRQ;
+}
+
+extern "C" bool
+ppc_get_gmac_mac(uint8* address)
+{
+	if (!sGmacMACValid)
+		return false;
+	for (int i = 0; i < 6; i++)
+		address[i] = sGmacMAC[i];
+	return true;
 }
 
 
@@ -396,6 +443,30 @@ arch_platform_init(struct kernel_args *kernelArgs)
 	sPCIHostBridgeType = kernelArgs->arch_args.pci_host_bridge_type;
 	sPCIConfigAddress = kernelArgs->arch_args.pci_config_address;
 	sPCIConfigData = kernelArgs->arch_args.pci_config_data;
+	sGmacIRQ = kernelArgs->arch_args.gmac_irq;
+	sGmacMACValid = kernelArgs->arch_args.gmac_mac_valid != 0;
+	for (int i = 0; i < 6; i++)
+		sGmacMAC[i] = kernelArgs->arch_args.gmac_mac[i];
+
+	uint32 bridgeCount = kernelArgs->arch_args.pci_host_bridge_count;
+	if (bridgeCount == 0 || bridgeCount > MAX_PCI_HOST_BRIDGES) {
+		// Old loader (or none captured): synthesize bridge 0 from the
+		// legacy fields so single-bridge machines keep working.
+		sPCIHostBridgeCount = 1;
+		sPCIHostBridges[0].type = sPCIHostBridgeType;
+		sPCIHostBridges[0].configAddress = sPCIConfigAddress;
+		sPCIHostBridges[0].configData = sPCIConfigData;
+	} else {
+		sPCIHostBridgeCount = bridgeCount;
+		for (uint32 i = 0; i < bridgeCount; i++) {
+			sPCIHostBridges[i].type
+				= kernelArgs->arch_args.pci_host_bridges[i].type;
+			sPCIHostBridges[i].configAddress
+				= kernelArgs->arch_args.pci_host_bridges[i].config_address;
+			sPCIHostBridges[i].configData
+				= kernelArgs->arch_args.pci_host_bridges[i].config_data;
+		}
+	}
 
 	return sPPCPlatform->Init(kernelArgs);
 }

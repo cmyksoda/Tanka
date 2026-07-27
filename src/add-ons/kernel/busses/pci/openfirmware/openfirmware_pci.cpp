@@ -74,6 +74,10 @@
 
 extern "C" void ppc_get_pci_host_bridge(uint32* type,
 	phys_addr_t* configAddress, phys_addr_t* configData);
+extern "C" uint32 ppc_get_pci_host_bridge_count();
+extern "C" status_t ppc_get_pci_host_bridge_at(uint32 index, uint32* type,
+	phys_addr_t* configAddress, phys_addr_t* configData);
+extern "C" uint32 ppc_get_gmac_irq();
 
 
 device_manager_info* gDeviceManager;
@@ -116,6 +120,8 @@ private:
 	addr_t			fConfigAddr = 0;
 	addr_t			fConfigData = 0;
 	uint32			fHostBridgeType = PCI_HOST_BRIDGE_GRACKLE;
+	uint32			fBridgeIndex = 0;
+	addr_t			fConfigDataMask = 0x03;
 
 	pci_resource_range	fRanges[4];
 	uint32			fRangeCount = 0;
@@ -146,16 +152,32 @@ OpenFirmwarePCIController::SupportsDevice(device_node* parent)
 status_t
 OpenFirmwarePCIController::RegisterDevice(device_node* parent)
 {
-	device_attr attrs[] = {
-		{ B_DEVICE_PRETTY_NAME, B_STRING_TYPE,
-			{ .string = "OpenFirmware PCI Host Bridge" } },
-		{ B_DEVICE_FIXED_CHILD, B_STRING_TYPE,
-			{ .string = "bus_managers/pci/root/driver_v1" } },
-		{}
-	};
+	// A Power Mac G4 has several UniNorth PCI host bridges (the boot disk,
+	// the built-in Ethernet, and FireWire can each live on a different one).
+	// Register one controller node per bridge so each becomes its own PCI
+	// domain and every bus gets enumerated.
+	uint32 count = ppc_get_pci_host_bridge_count();
+	if (count == 0)
+		count = 1;
 
-	return gDeviceManager->register_node(parent, OF_PCI_DRIVER_MODULE_NAME,
-		attrs, NULL, NULL);
+	status_t lastError = B_OK;
+	for (uint32 i = 0; i < count; i++) {
+		device_attr attrs[] = {
+			{ B_DEVICE_PRETTY_NAME, B_STRING_TYPE,
+				{ .string = "OpenFirmware PCI Host Bridge" } },
+			{ B_DEVICE_FIXED_CHILD, B_STRING_TYPE,
+				{ .string = "bus_managers/pci/root/driver_v1" } },
+			{ "of_pci/bridge_index", B_UINT32_TYPE, { .ui32 = i } },
+			{}
+		};
+
+		status_t error = gDeviceManager->register_node(parent,
+			OF_PCI_DRIVER_MODULE_NAME, attrs, NULL, NULL);
+		if (error != B_OK)
+			lastError = error;
+	}
+
+	return lastError;
 }
 
 
@@ -184,14 +206,81 @@ OpenFirmwarePCIController::UninitDriver()
 }
 
 
+
+// The GMAC Ethernet clock is gated by the UniNorth (not KeyLargo) clock
+// control register. Until it is running the GMAC's PCI config space reads
+// all-ones and the bus scan cannot see it. Enable it before the Ethernet
+// bridge (the UniNorth bus at config 0xf4800000) is enumerated. The UniNorth
+// control registers live at physical 0xf8000000 on these Power Mac G4s; the
+// clock control register is at +0x20 and is accessed little-endian. We only
+// OR in the GMAC bit (read-modify-write), so other clocks are untouched.
+// This mirrors Linux's core99_gmac_enable().
+#define UNINORTH_PHYS_BASE		0xf8000000
+#define UNI_N_CLOCK_CNTL		0x20
+#define UNI_N_CLOCK_CNTL_GMAC		0x02
+#define ETHERNET_BRIDGE_CONFIG_ADDR	0xf4800000
+
+static void
+enable_gmac_clock()
+{
+	void* regs = NULL;
+	area_id area = map_physical_memory("uni-n clock cntl",
+		UNINORTH_PHYS_BASE, B_PAGE_SIZE,
+		B_ANY_KERNEL_ADDRESS | B_UNCACHED_MEMORY,
+		B_KERNEL_READ_AREA | B_KERNEL_WRITE_AREA, &regs);
+	if (area < B_OK) {
+		dprintf("of_pci: GMAC clock enable: cannot map uni-n (%#lx)\n",
+			(addr_t)area);
+		return;
+	}
+
+	volatile uint32* clockCntl
+		= (volatile uint32*)((addr_t)regs + UNI_N_CLOCK_CNTL);
+	// UniNorth CONTROL registers are big-endian/native (unlike its PCI config
+	// space, which is little-endian). Access this register natively.
+	uint32 before = B_BENDIAN_TO_HOST_INT32(*clockCntl);
+	*clockCntl = B_HOST_TO_BENDIAN_INT32(before | UNI_N_CLOCK_CNTL_GMAC);
+	asm volatile("eieio" ::: "memory");
+	(void)*clockCntl;
+	asm volatile("eieio" ::: "memory");
+	spin(20);
+	uint32 after = B_BENDIAN_TO_HOST_INT32(*clockCntl);
+	dprintf("of_pci: GMAC clock enable: UNI_N_CLOCK_CNTL %#08x -> %#08x\n",
+		(unsigned)before, (unsigned)after);
+	// Give the cell time to come out of clock-gating before it is probed.
+	spin(3000);
+
+	delete_area(area);
+}
+
+
 status_t
 OpenFirmwarePCIController::InitController()
 {
+	// Which host bridge is this node? (Set by RegisterDevice.)
+	uint32 index = 0;
+	gDeviceManager->get_attr_uint32(fNode, "of_pci/bridge_index", &index,
+		false);
+	fBridgeIndex = index;
+
 	uint32 type = PCI_HOST_BRIDGE_GRACKLE;
 	phys_addr_t configAddrPhys = GRACKLE_CONFIG_ADDR;
 	phys_addr_t configDataPhys = GRACKLE_CONFIG_DATA;
-	ppc_get_pci_host_bridge(&type, &configAddrPhys, &configDataPhys);
+	if (ppc_get_pci_host_bridge_at(index, &type, &configAddrPhys,
+			&configDataPhys) != B_OK) {
+		ppc_get_pci_host_bridge(&type, &configAddrPhys, &configDataPhys);
+	}
 	fHostBridgeType = type;
+	// UniNorth CONFIG_DATA is an 8-byte window (offset & 0x07); Grackle a
+	// 4-byte one. The boot bridge (index 0) is deliberately kept on the
+	// 4-byte access that every prior boot used: widening it there makes
+	// odd-offset registers (header_type, BAR1/3/5) of the mac-io/ATA devices
+	// read "correctly" and re-triggers a pre-existing KDiskDeviceManager
+	// scan recursion during boot-volume mount. gem only needs correct access
+	// on the Ethernet bridge, so apply the wider window to the non-boot
+	// bridges only.
+	fConfigDataMask = (type == PCI_HOST_BRIDGE_UNINORTH && fBridgeIndex != 0)
+		? 0x07 : 0x03;
 
 	// Map a window covering both config registers (uncached device memory).
 	phys_addr_t lo = configAddrPhys < configDataPhys
@@ -212,8 +301,14 @@ OpenFirmwarePCIController::InitController()
 	fConfigData = (addr_t)regs + (addr_t)(configDataPhys - regsBase);
 
 	if (fHostBridgeType == PCI_HOST_BRIDGE_UNINORTH) {
-		// UniNorth host-side windows (from the OF "ranges"). The main memory
-		// window is 1:1, so device BARs (incl. mac-io) are CPU-addressable.
+		// UniNorth host-side windows. Each bridge's registers sit at its OF
+		// "reg" base; the config regs are base+0x800000, so recover the base.
+		// The near I/O and MMIO windows are relative to that base; the main
+		// 32-bit MMIO window is 1:1, so device BARs (incl. mac-io) are
+		// CPU-addressable. (BARs are mapped directly by their physical value,
+		// so these ranges only need to be good enough for resource lookup.)
+		phys_addr_t base = configAddrPhys - 0x800000;
+
 		pci_resource_range& mmio = fRanges[fRangeCount++];
 		mmio = {};
 		mmio.type = B_IO_MEMORY;
@@ -226,14 +321,14 @@ OpenFirmwarePCIController::InitController()
 		mmio2 = {};
 		mmio2.type = B_IO_MEMORY;
 		mmio2.address_type = PCI_address_type_32;
-		mmio2.host_address = 0xf3000000;
-		mmio2.pci_address = 0xf3000000;
+		mmio2.host_address = base + 0x01000000;
+		mmio2.pci_address = base + 0x01000000;
 		mmio2.size = 0x01000000;
 
 		pci_resource_range& io = fRanges[fRangeCount++];
 		io = {};
 		io.type = B_IO_PORT;
-		io.host_address = 0xf2000000;
+		io.host_address = base;
 		io.pci_address = 0x00000000;
 		io.size = 0x00800000;
 	} else {
@@ -253,9 +348,26 @@ OpenFirmwarePCIController::InitController()
 		io.size = GRACKLE_IO_SIZE;
 	}
 
-	dprintf("of_pci: %s host bridge ready (config %#lx/%#lx)\n",
+	dprintf("of_pci: %s host bridge %u ready (config %#lx/%#lx)\n",
 		fHostBridgeType == PCI_HOST_BRIDGE_UNINORTH ? "UniNorth" : "Grackle",
-		(addr_t)configAddrPhys, (addr_t)configDataPhys);
+		(unsigned)fBridgeIndex, (addr_t)configAddrPhys, (addr_t)configDataPhys);
+
+	// The GMAC Ethernet cell hangs off this bridge but is clock-gated until
+	// enabled; do it now, before the PCI stack enumerates this domain.
+	if (fHostBridgeType == PCI_HOST_BRIDGE_UNINORTH
+			&& (addr_t)configAddrPhys == ETHERNET_BRIDGE_CONFIG_ADDR) {
+		enable_gmac_clock();
+
+		// The GMAC's config interrupt_line register is unrouted (reads 0xff)
+		// on these Macs; the boot loader resolved its real OpenPIC input from
+		// the OF interrupt-map. Program it so the network driver's
+		// bus_alloc_resource(SYS_RES_IRQ) finds a usable vector. (ethernet@f
+		// is device 15 on this bridge.)
+		uint32 gmacIRQ = ppc_get_gmac_irq();
+		if (gmacIRQ != 0 && gmacIRQ < 0xff)
+			WriteConfig(0, 15, 0, 0x3c, 1, gmacIRQ);
+	}
+
 	return B_OK;
 }
 
@@ -307,7 +419,11 @@ OpenFirmwarePCIController::ReadConfig(uint8 bus, uint8 device, uint8 function,
 	}
 	SetConfigAddress(bus, device, function, offset);
 
-	addr_t data = fConfigData + (offset & 3);
+	// UniNorth exposes CONFIG_DATA as an 8-byte window: the register byte is
+	// at cfg_data + (offset & 0x07), NOT (offset & 0x03). Getting this wrong
+	// makes every odd dword (command @0x04, BAR1 @0x14, ...) alias the wrong
+	// location - which is why the GMAC command register could not be written.
+	addr_t data = fConfigData + (offset & fConfigDataMask);
 	switch (size) {
 		case 1:
 			value = *(volatile uint8*)data;
@@ -335,22 +451,32 @@ OpenFirmwarePCIController::WriteConfig(uint8 bus, uint8 device, uint8 function,
 			&& device < 11) {
 		return B_OK;
 	}
-	SetConfigAddress(bus, device, function, offset);
+	if (size != 1 && size != 2 && size != 4)
+		return B_BAD_VALUE;
 
-	addr_t data = fConfigData + (offset & 3);
-	switch (size) {
-		case 1:
-			*(volatile uint8*)data = (uint8)value;
-			break;
-		case 2:
-			*(volatile uint16*)data = B_HOST_TO_LENDIAN_INT16((uint16)value);
-			break;
-		case 4:
-			*(volatile uint32*)data = B_HOST_TO_LENDIAN_INT32(value);
-			break;
-		default:
-			return B_BAD_VALUE;
+	// The UniNorth host bridge only reliably accepts 32-bit writes to its
+	// CONFIG_DATA register; a narrower store to a byte lane does not stick
+	// (this is why enabling the GMAC's command-register memory bit silently
+	// failed). Perform sub-dword writes as a 32-bit read-modify-write.
+	// See ReadConfig: the register dword lives at cfg_data + (offset & mask)
+	// where mask is 0x07 on UniNorth. The bridge only reliably accepts 32-bit
+	// CONFIG_DATA stores, so sub-dword writes are done as a read-modify-write
+	// of the containing 32-bit word.
+	addr_t dwordAddr = fConfigData + (offset & fConfigDataMask & ~(addr_t)3);
+	if (size == 4) {
+		SetConfigAddress(bus, device, function, offset);
+		*(volatile uint32*)dwordAddr = B_HOST_TO_LENDIAN_INT32(value);
+		asm volatile("eieio" ::: "memory");
+		return B_OK;
 	}
+
+	SetConfigAddress(bus, device, function, offset);
+	uint32 dword = B_LENDIAN_TO_HOST_INT32(*(volatile uint32*)dwordAddr);
+	uint32 shift = (uint32)(offset & 3) * 8;
+	uint32 mask = ((size == 1) ? 0xffu : 0xffffu) << shift;
+	dword = (dword & ~mask) | ((value << shift) & mask);
+	SetConfigAddress(bus, device, function, offset);
+	*(volatile uint32*)dwordAddr = B_HOST_TO_LENDIAN_INT32(dword);
 	asm volatile("eieio" ::: "memory");
 
 	return B_OK;

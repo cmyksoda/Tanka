@@ -1217,6 +1217,151 @@ arch_mmu_init(void)
 			(unsigned)gKernelArgs.arch_args.pci_host_bridge_type,
 			(unsigned)gKernelArgs.arch_args.pci_config_address,
 			(unsigned)gKernelArgs.arch_args.pci_config_data, hostPath);
+
+		// Enumerate EVERY PCI host bridge, not just the boot one. A Power Mac
+		// G4 has multiple UniNorth PCI buses and the built-in Ethernet (GMAC)
+		// commonly sits on a different bridge than the boot disk. Bridge 0 is
+		// the boot bridge (mirrors the legacy fields above) so the proven boot
+		// path keeps domain 0 unchanged; additional bridges are appended.
+		gKernelArgs.arch_args.pci_host_bridges[0].type
+			= gKernelArgs.arch_args.pci_host_bridge_type;
+		gKernelArgs.arch_args.pci_host_bridges[0].config_address
+			= gKernelArgs.arch_args.pci_config_address;
+		gKernelArgs.arch_args.pci_host_bridges[0].config_data
+			= gKernelArgs.arch_args.pci_config_data;
+		uint32 bridgeCount = 1;
+		uint64 bootConfig = gKernelArgs.arch_args.pci_config_address;
+
+		intptr_t root = of_finddevice("/");
+		for (intptr_t child = root != -1 ? of_child(root) : 0;
+				child != 0 && child != -1
+					&& bridgeCount < MAX_PCI_HOST_BRIDGES;
+				child = of_peer(child)) {
+			char dtype[32];
+			dtype[0] = '\0';
+			of_getprop(child, "device_type", dtype, sizeof(dtype));
+			if (strcmp(dtype, "pci") != 0)
+				continue;
+
+			char compatible[64];
+			compatible[0] = '\0';
+			of_getprop(child, "compatible", compatible, sizeof(compatible));
+
+			uint32 type;
+			uint64 configAddress;
+			uint64 configData;
+			if (strcmp(compatible, "uni-north") == 0) {
+				uint32 reg[2] = { 0, 0 };
+				of_getprop(child, "reg", reg, sizeof(reg));
+				type = 1;
+				configAddress = (uint64)reg[0] + 0x800000;
+				configData = (uint64)reg[0] + 0xc00000;
+			} else {
+				// Grackle / other: architecturally-fixed config registers.
+				type = 0;
+				configAddress = 0xfec00000;
+				configData = 0xfee00000;
+			}
+
+			// Skip the boot bridge; it is already bridge 0.
+			if (configAddress == bootConfig)
+				continue;
+
+			gKernelArgs.arch_args.pci_host_bridges[bridgeCount].type = type;
+			gKernelArgs.arch_args.pci_host_bridges[bridgeCount]
+				.config_address = configAddress;
+			gKernelArgs.arch_args.pci_host_bridges[bridgeCount]
+				.config_data = configData;
+			dprintf("pci host bridge %u: type %u config 0x%x/0x%x\n",
+				(unsigned)bridgeCount, (unsigned)type,
+				(unsigned)configAddress, (unsigned)configData);
+			bridgeCount++;
+		}
+		gKernelArgs.arch_args.pci_host_bridge_count = bridgeCount;
+		dprintf("pci host bridges: %u total\n", (unsigned)bridgeCount);
+
+		// Capture the built-in Ethernet (GMAC) IRQ from OF. The PCI
+		// interrupt_line register is unrouted on these Macs; the network
+		// driver needs the OpenPIC input number from the device tree.
+		gKernelArgs.arch_args.gmac_irq = 0;
+		for (intptr_t br = root != -1 ? of_child(root) : 0;
+				br != 0 && br != -1; br = of_peer(br)) {
+			char brType[32];
+			brType[0] = '\0';
+			of_getprop(br, "device_type", brType, sizeof(brType));
+			if (strcmp(brType, "pci") != 0)
+				continue;
+			for (intptr_t ch = of_child(br); ch != 0 && ch != -1;
+					ch = of_peer(ch)) {
+				char chType[32];
+				chType[0] = '\0';
+				of_getprop(ch, "device_type", chType, sizeof(chType));
+				if (strcmp(chType, "network") != 0)
+					continue;
+				uint32 intr[8];
+				for (int i = 0; i < 8; i++)
+					intr[i] = 0;
+				intptr_t len = of_getprop(ch, "interrupts", intr,
+					sizeof(intr));
+				if (len < 4) {
+					len = of_getprop(ch, "AAPL,interrupts", intr,
+						sizeof(intr));
+				}
+				uint32 resolvedIRQ = (len >= 4) ? intr[0] : 0;
+
+				// The raw "interrupts" value is only the device pin, not the
+				// OpenPIC input. Resolve it through the parent PCI bridge's
+				// "interrupt-map" (br is that bridge). Entry layout for this
+				// bridge: 3 address cells + 1 interrupt cell + 1 parent phandle
+				// + 2 parent interrupt cells (OpenPIC input, sense) = 7 cells.
+				uint32 childReg[4];
+				for (int i = 0; i < 4; i++)
+					childReg[i] = 0;
+				of_getprop(ch, "reg", childReg, sizeof(childReg));
+				uint32 imap[64];
+				for (int i = 0; i < 64; i++)
+					imap[i] = 0;
+				uint32 imask[4] = { 0, 0, 0, 0 };
+				intptr_t maplen = of_getprop(br, "interrupt-map", imap,
+					sizeof(imap));
+				of_getprop(br, "interrupt-map-mask", imask, sizeof(imask));
+				if (maplen >= 28) {
+					uint32 nCells = (uint32)maplen / 4;
+					uint32 keyHi = childReg[0] & imask[0];
+					uint32 keyIntr = resolvedIRQ & imask[3];
+					for (uint32 e = 0; e + 7 <= nCells; e += 7) {
+						if ((imap[e + 0] & imask[0]) == keyHi
+								&& (imap[e + 3] & imask[3]) == keyIntr) {
+							resolvedIRQ = imap[e + 5];
+							break;
+						}
+					}
+				}
+
+				if (resolvedIRQ != 0) {
+					gKernelArgs.arch_args.gmac_irq = resolvedIRQ;
+					dprintf("gmac irq: pin %u -> openpic %u\n",
+						(unsigned)((len >= 4) ? intr[0] : 0),
+						(unsigned)resolvedIRQ);
+				}
+				uint8 mac[6];
+				for (int i = 0; i < 6; i++)
+					mac[i] = 0;
+				intptr_t mlen = of_getprop(ch, "local-mac-address",
+					mac, sizeof(mac));
+				if (mlen != 6)
+					mlen = of_getprop(ch, "mac-address", mac,
+						sizeof(mac));
+				if (mlen == 6) {
+					for (int i = 0; i < 6; i++)
+						gKernelArgs.arch_args.gmac_mac[i] = mac[i];
+					gKernelArgs.arch_args.gmac_mac_valid = 1;
+					dprintf("gmac mac from OF: "
+						"%02x:%02x:%02x:%02x:%02x:%02x\n",
+						mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+				}
+			}
+		}
 	}
 
 	return B_OK;
