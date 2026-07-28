@@ -421,6 +421,8 @@ arch_restore_signal_frame(struct signal_frame_data* signalFrameData)
 void
 arch_store_fork_frame(struct arch_fork_arg *arg)
 {
+	arg->iframe = *ppc_get_user_iframe();
+	arg->iframe.r3 = 0;
 }
 
 
@@ -435,5 +437,13 @@ arch_store_fork_frame(struct arch_fork_arg *arg)
 void
 arch_restore_fork_frame(struct arch_fork_arg *arg)
 {
+	Thread* thread = thread_get_current_thread();
+
+	ppc_get_cpu_exception_context(smp_get_current_cpu())->kernel_stack
+		= (void*)(thread->kernel_stack_top - 8);
+
+	struct iframe frame = arg->iframe;
+	disable_interrupts();
+	ppc_enter_userspace(&frame);
 }
 

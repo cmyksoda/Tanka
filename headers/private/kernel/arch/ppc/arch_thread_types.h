@@ -33,10 +33,7 @@ struct arch_team {
 };
 
 struct arch_fork_arg {
-	// gcc treats empty structures as zero-length in C, but as if they contain
-	// a char in C++. So we have to put a dummy in to be able to use the struct
-	// from both in a consistent way.
-	char	dummy;
+	struct iframe iframe;
 };
 
 #endif	/* KERNEL_ARCH_PPC_THREAD_TYPES_H */

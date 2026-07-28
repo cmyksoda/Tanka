@@ -6,19 +6,10 @@
 #define _KERNEL_ARCH_PPC_CPU_H
 
 
-#include <arch/ppc/arch_thread_types.h>
-#include <kernel.h>
+#include <SupportDefs.h>
 
-
-#define CPU_MAX_CACHE_LEVEL	8
-#define CACHE_LINE_SIZE		128
-	// 128 Byte lines on PPC970
-
-
-#define arch_cpu_enable_user_access()
-#define arch_cpu_disable_user_access()
-
-
+// struct iframe must be complete before arch_thread_types.h below,
+// because arch_fork_arg embeds it by value (cyclic include).
 struct iframe {
 	uint32 vector;
 	uint32 srr0;
@@ -95,6 +86,20 @@ struct iframe {
 	double f1;
 	double f0;
 };
+
+#include <arch/ppc/arch_thread_types.h>
+#include <kernel.h>
+
+
+#define CPU_MAX_CACHE_LEVEL	8
+#define CACHE_LINE_SIZE		128
+	// 128 Byte lines on PPC970
+
+
+#define arch_cpu_enable_user_access()
+#define arch_cpu_disable_user_access()
+
+
 
 enum machine_state {
 	MSR_EXCEPTIONS_ENABLED			= 1L << 15,		// EE

@@ -3316,6 +3316,16 @@ vm_set_area_protection(area_id areaID, uint32 newProtection,
 		// we don't have anything special to do in all other cases
 	}
 
+	// COW safety: never make a page from a lower (shared) cache writable via
+	// the blanket ProtectArea() below -- that defeats copy-on-write, letting
+	// every consumer share one physical page (observed on ppc: all teams'
+	// libroot data, incl. malloc's mopts, collapsed onto one page). If this
+	// area can COW (has a source cache) and is writable, only remap the top
+	// cache's own private pages; shared source pages stay read-only and fault
+	// into a private copy on write.
+	if (becomesWritable && cache->source != NULL)
+		changeTopCachePagesOnly = true;
+
 	if (status == B_OK) {
 		// remap existing pages in this cache
 		if (changePageProtection) {
