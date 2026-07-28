@@ -357,8 +357,35 @@ init_dependencies(image_t *image, bool initHead)
 			before(image->id);
 		}
 
-		if (image->init_routine != 0)
+		if (image->init_routine != 0) {
+#ifdef __POWERPC__
+			// Some ppc packages were linked without crti.o/crtn.o, so their
+			// _init lacks the prologue/epilogue that save and restore the
+			// caller's return address (LR). Such an _init is literally
+			//   bl frame_dummy; bl __do_global_ctors_aux; blr
+			// the bl's clobber LR, so the trailing blr returns to itself and
+			// spins forever. Detect that shape (the first instruction is a
+			// "bl" rather than an stwu-based frame setup) and call the leading
+			// bl targets directly -- this still runs frame registration and
+			// the constructors, but returns cleanly. Well-formed _inits take
+			// the normal path, so HaikuDepot-installed packages keep working.
+			const uint32* code = (const uint32*)image->init_routine;
+			if ((code[0] & 0xfc000003) == 0x48000001) {
+				for (int k = 0; k < 8; k++) {
+					uint32 insn = code[k];
+					if ((insn & 0xfc000003) != 0x48000001)
+						break;	// reached the trailing blr (or a non-bl)
+					int32 disp = insn & 0x03fffffc;
+					if (disp & 0x02000000)
+						disp |= 0xfc000000;	// sign-extend the 26-bit offset
+					((void (*)())((addr_t)&code[k] + disp))();
+				}
+			} else
+				((init_term_function)image->init_routine)(image->id);
+#else
 			((init_term_function)image->init_routine)(image->id);
+#endif
+		}
 
 		if (image->init_array) {
 			uint count_init = image->init_array_len / sizeof(addr_t);
