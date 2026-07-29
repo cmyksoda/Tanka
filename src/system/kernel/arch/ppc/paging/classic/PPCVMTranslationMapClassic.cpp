@@ -423,17 +423,26 @@ bool
 PPCVMTranslationMapClassic::RemovePageTableEntry(addr_t virtualAddress)
 {
 	page_table_entry *entry = LookupPageTableEntry(virtualAddress);
-	if (entry == NULL)
-		return false;
+	bool found = (entry != NULL);
+	if (found)
+		entry->valid = 0;
 
-	entry->valid = 0;
+	// Always invalidate the TLB for this address, even when the hash-table
+	// entry was already gone. Map()'s eviction drops a PTE from the table
+	// WITHOUT a tlbie, so a stale TLB entry can still be resolving this address
+	// to its old physical page. If we skipped the tlbie here (the entry ==
+	// NULL / evicted case), that stale translation would survive an unmap or a
+	// COW re-map, and the address would alias a freed/reused physical page --
+	// the real-hardware-only 'wrong physical page' corruption behind the ppc
+	// fork/teardown/window-open crashes. A tlbie for an address with no live
+	// TLB entry is a harmless no-op.
 	ppc_sync();
 	tlbie(virtualAddress);
 	eieio();
 	tlbsync();
 	ppc_sync();
 
-	return true;
+	return found;
 }
 
 
