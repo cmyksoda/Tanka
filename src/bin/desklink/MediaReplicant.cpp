@@ -181,6 +181,8 @@ MediaReplicant::MediaReplicant(BRect frame, const char* name,
 	:
 	BView(frame, name, resizeMask, flags),
 	fMixerControl(NULL),
+	fIcon(NULL),
+	fMutedIcon(NULL),
 	fVolumeSlider(NULL),
 	fMuted(false)
 {
@@ -192,6 +194,8 @@ MediaReplicant::MediaReplicant(BMessage* message)
 	:
 	BView(message),
 	fMixerControl(NULL),
+	fIcon(NULL),
+	fMutedIcon(NULL),
 	fVolumeSlider(NULL),
 	fMuted(false)
 {
