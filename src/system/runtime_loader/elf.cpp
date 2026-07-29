@@ -320,6 +320,40 @@ relocate_dependencies(image_t *image)
 }
 
 
+#ifdef __POWERPC__
+// Some ppc packages were linked without crti.o/crtn.o, so their _init/_fini
+// lack the prologue/epilogue that save and restore the caller's return
+// address (LR). Such a routine is only the crtstuff body, e.g.
+//   bl frame_dummy; bl __do_global_ctors_aux; blr   (_init)
+//   bl __do_global_dtors_aux; blr                   (_fini)
+// The bl's clobber LR, so the trailing blr returns to itself and spins
+// forever -- any program loading such a library hangs at startup or exit.
+// Detect that shape (the first instruction is a "bl" rather than an stwu-based
+// frame setup) and call the leading bl targets directly, decoding each
+// relative branch. This still runs frame registration and (con|de)structors
+// but returns cleanly. Well-formed routines (and "b" tail-calls, LK=0) take
+// the normal path, so this stays compatible with every correctly built
+// package -- including anything installed later via HaikuDepot.
+static void
+call_init_term_routine(addr_t routine, image_id id)
+{
+	const uint32* code = (const uint32*)routine;
+	if ((code[0] & 0xfc000003) == 0x48000001) {
+		for (int k = 0; k < 8; k++) {
+			uint32 insn = code[k];
+			if ((insn & 0xfc000003) != 0x48000001)
+				break;	// reached the trailing blr (or a non-bl)
+			int32 disp = insn & 0x03fffffc;
+			if (disp & 0x02000000)
+				disp |= 0xfc000000;	// sign-extend the 26-bit offset
+			((void (*)())((addr_t)&code[k] + disp))();
+		}
+	} else
+		((init_term_function)routine)(id);
+}
+#endif
+
+
 static void
 init_dependencies(image_t *image, bool initHead)
 {
@@ -359,29 +393,7 @@ init_dependencies(image_t *image, bool initHead)
 
 		if (image->init_routine != 0) {
 #ifdef __POWERPC__
-			// Some ppc packages were linked without crti.o/crtn.o, so their
-			// _init lacks the prologue/epilogue that save and restore the
-			// caller's return address (LR). Such an _init is literally
-			//   bl frame_dummy; bl __do_global_ctors_aux; blr
-			// the bl's clobber LR, so the trailing blr returns to itself and
-			// spins forever. Detect that shape (the first instruction is a
-			// "bl" rather than an stwu-based frame setup) and call the leading
-			// bl targets directly -- this still runs frame registration and
-			// the constructors, but returns cleanly. Well-formed _inits take
-			// the normal path, so HaikuDepot-installed packages keep working.
-			const uint32* code = (const uint32*)image->init_routine;
-			if ((code[0] & 0xfc000003) == 0x48000001) {
-				for (int k = 0; k < 8; k++) {
-					uint32 insn = code[k];
-					if ((insn & 0xfc000003) != 0x48000001)
-						break;	// reached the trailing blr (or a non-bl)
-					int32 disp = insn & 0x03fffffc;
-					if (disp & 0x02000000)
-						disp |= 0xfc000000;	// sign-extend the 26-bit offset
-					((void (*)())((addr_t)&code[k] + disp))();
-				}
-			} else
-				((init_term_function)image->init_routine)(image->id);
+			call_init_term_routine(image->init_routine, image->id);
 #else
 			((init_term_function)image->init_routine)(image->id);
 #endif
@@ -424,8 +436,13 @@ call_term_functions(image_t* image)
 			((initfini_array_function)image->term_array[i])();
 	}
 
-	if (image->term_routine)
+	if (image->term_routine) {
+#ifdef __POWERPC__
+		call_init_term_routine(image->term_routine, image->id);
+#else
 		((init_term_function)image->term_routine)(image->id);
+#endif
+	}
 
 	init_term_function after;
 	if (find_symbol(image,
