@@ -51,12 +51,12 @@ AddFilesToPackage add-ons kernel busses pci :
 	;
 AddFilesToPackage add-ons kernel busses random :
 	ccp_rng@x86,x86_64
-	virtio_rng
+	virtio_rng@x86,x86_64,riscv64,arm,arm64
 	;
 AddFilesToPackage add-ons kernel busses scsi :
 	ahci
 	hyperv_scsi@x86,x86_64
-	virtio_scsi
+	virtio_scsi@x86,x86_64,riscv64,arm,arm64
 	;
 AddFilesToPackage add-ons kernel busses usb :
 	<usb>uhci
@@ -66,7 +66,7 @@ AddFilesToPackage add-ons kernel busses usb :
 	;
 AddFilesToPackage add-ons kernel busses virtio :
 	virtio_mmio@riscv64,arm,arm64
-	virtio_pci
+	virtio_pci@x86,x86_64,riscv64,arm,arm64
 	;
 AddFilesToPackage add-ons kernel console :
 	vga_text
@@ -137,7 +137,7 @@ AddNewDriversToPackage disk virtual :
 	#virtio_block
 	;
 AddNewDriversToPackage graphics :
-	virtio_gpu
+	virtio_gpu@x86,x86_64,riscv64,arm,arm64
 	;
 AddNewDriversToPackage power
 	: $(SYSTEM_ADD_ONS_DRIVERS_POWER) ;
@@ -145,12 +145,12 @@ AddNewDriversToPackage sensor
 	: $(SYSTEM_ADD_ONS_DRIVERS_SENSOR) ;
 AddNewDriversToPackage network :
 	usb_ecm
-	virtio_net
+	virtio_net@x86,x86_64,riscv64,arm,arm64
 	;
 AddNewDriversToPackage input :
 	hyperv_hid@x86,x86_64
 	i2c_elan
-	virtio_input
+	virtio_input@x86,x86_64,riscv64,arm,arm64
 	;
 AddNewDriversToPackage display :
 #	display_adapter@x86
@@ -368,17 +368,17 @@ AddBootModuleSymlinksToPackage
 	<usb>ohci
 	<usb>uhci
 	<usb>xhci
-	virtio
+	virtio@x86,x86_64,riscv64,arm,arm64
 	#virtio_block
 	virtio_mmio@riscv64,arm,arm64
-	virtio_pci
-	virtio_scsi
+	virtio_pci@x86,x86_64,riscv64,arm,arm64
+	virtio_scsi@x86,x86_64,riscv64,arm,arm64
 ;
 
 # add-ons
 AddFilesToPackage add-ons accelerants :
 	framebuffer.accelerant
-	virtio_gpu.accelerant
+	virtio_gpu.accelerant@x86,x86_64,riscv64,arm,arm64
 	$(SYSTEM_ADD_ONS_ACCELERANTS) ;
 AddFilesToPackage add-ons locale catalogs :
 	$(SYSTEM_ADD_ONS_LOCALE_CATALOGS) ;
@@ -431,7 +431,7 @@ AddFilesToPackage add-ons input_server devices :
 	<input>keyboard
 	<input>mouse
 	<input>tablet
-	<input>virtio
+	<input>virtio@x86,x86_64,riscv64,arm,arm64
 	<input>wacom
 	;
 AddFilesToPackage add-ons input_server filters :

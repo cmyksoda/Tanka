@@ -422,7 +422,7 @@ SYSTEM_ADD_ONS_BUS_MANAGERS = [ FFilterByBuildFeatures
 	fdt@riscv64,arm,arm64
 	random
 	usb
-	virtio
+	virtio@x86,x86_64,riscv64,arm,arm64
 ] ;
 
 SYSTEM_ADD_ONS_FILE_SYSTEMS =
