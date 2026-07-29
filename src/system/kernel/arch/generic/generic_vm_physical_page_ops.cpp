@@ -143,6 +143,25 @@ generic_vm_memcpy_physical_page(phys_addr_t to, phys_addr_t from)
 	if (error == B_OK) {
 		// both pages are mapped -- copy
 		memcpy((void*)toVirtual, (const void*)fromVirtual, B_PAGE_SIZE);
+#ifdef __POWERPC__
+		// PowerPC I/D caches are not coherent, and ppc user binaries use a
+		// single read-write-execute LOAD segment, so a copy-on-write copy of a
+		// data page also carries executable code. Unless we push the just-
+		// written destination out of the data cache and invalidate the
+		// instruction cache for it, a forked child executing from the copied
+		// page would fetch stale instructions and take an illegal-instruction
+		// exception (0x700). Mirrors sync_icache_for_relocation() in arch_elf.cpp.
+		{
+			const addr_t kLine = 32;
+			for (addr_t _p = toVirtual; _p < toVirtual + B_PAGE_SIZE; _p += kLine)
+				asm volatile("dcbst 0,%0" :: "r"(_p));
+			asm volatile("sync");
+			for (addr_t _p = toVirtual; _p < toVirtual + B_PAGE_SIZE; _p += kLine)
+				asm volatile("icbi 0,%0" :: "r"(_p));
+			asm volatile("sync");
+			asm volatile("isync");
+		}
+#endif
 		vm_put_physical_page_current_cpu(toVirtual, toHandle);
 	} else {
 		panic("generic_vm_memcpy_physical_page(): Failed to map destination "
