@@ -18,6 +18,8 @@
 
 #include <new>
 #include <stdio.h>
+#include <string.h>
+#include <dlfcn.h>
 
 #include <Alert.h>
 #include <Bitmap.h>
@@ -162,6 +164,17 @@ private:
 status_t
 our_image(image_info& image)
 {
+	// On the ppc port image_info.text is 0 (images have a single read-write-
+	// execute LOAD segment, which register_image() classifies purely as data),
+	// so the get_next_image_info() address-range match below never matches.
+	// Resolve our own image via dladdr() instead -- it uses the runtime
+	// loader region list and returns the path we need to read our resources.
+	Dl_info dlinfo;
+	if (dladdr((const void*)&our_image, &dlinfo) != 0 && dlinfo.dli_fname != NULL) {
+		strlcpy(image.name, dlinfo.dli_fname, sizeof(image.name));
+		return B_OK;
+	}
+
 	int32 cookie = 0;
 	while (get_next_image_info(B_CURRENT_TEAM, &cookie, &image) == B_OK) {
 		if ((char*)our_image >= (char*)image.text
