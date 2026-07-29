@@ -398,7 +398,20 @@ vm_page::IncrementWiredCount()
 inline void
 vm_page::DecrementWiredCount()
 {
+#ifdef __POWERPC__
+	if (fWiredCount == 0) {
+		// Known ppc teardown over-decrement bug: skip instead of panicking
+		// (leak the page, as the VMCache::Delete workaround already does).
+		static int32 sPPCWiredUnderflow = 0;
+		if (atomic_add(&sPPCWiredUnderflow, 1) == 0) {
+			dprintf("vm_page::DecrementWiredCount: ppc wired-count underflow; "
+				"skipping to avoid a kernel panic. Counted silently after this.\n");
+		}
+		return;
+	}
+#else
 	ASSERT_PRINT(fWiredCount > 0, "page: %#" B_PRIx64, physical_page_number * B_PAGE_SIZE);
+#endif
 
 	if (--fWiredCount == 0)
 		cache_ref->cache->DecrementWiredPagesCount();

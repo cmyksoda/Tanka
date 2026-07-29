@@ -2377,6 +2377,18 @@ load_kernel_add_on(const char *path)
 		B_KERNEL_READ_AREA | B_KERNEL_EXECUTE_AREA
 		| (textSectionWritable ? B_KERNEL_WRITE_AREA : 0));
 
+#ifdef __POWERPC__
+	// PowerPC I/D caches are not coherent, and nothing else flushes a kernel
+	// add-on's freshly loaded code: it is mapped read-write while loading (no
+	// executable icache sync), and the protection change above is a no-op for
+	// kernel maps on this port. Device-driver probing loads/unloads/reloads
+	// modules and reuses physical pages, so a reused page's instruction cache
+	// still holds the previous add-on's code -> the new add-on runs stale
+	// instructions and faults on a garbage pointer. Flush the text segment.
+	arch_cpu_sync_icache((void*)image->text_region.start,
+		image->text_region.size);
+#endif
+
 	// There might be a hole between the two segments, and we don't need to
 	// reserve this any longer
 	vm_unreserve_address_range(VMAddressSpace::KernelID(), reservedAddress,
