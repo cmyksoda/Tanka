@@ -149,6 +149,7 @@ SYSTEM_APPS = [ FFilterByBuildFeatures
 DESKBAR_APPLICATIONS =
 	CharacterMap
 	DeskCalc
+	HaikuDepot
 	Devices
 	DiskProbe
 	DiskUsage
@@ -204,6 +205,7 @@ SYSTEM_DEMOS += [ FFilterByBuildFeatures
 
 SYSTEM_APPS += [ FFilterByBuildFeatures
 	ActivityMonitor
+	HaikuDepot
 	AutoRaise
 	Icon-O-Matic@expat
 	LaunchBox
@@ -222,6 +224,16 @@ SYSTEM_PREFERENCES += [ FFilterByBuildFeatures
 	ScreenSaver
 	Sounds
 ] ;
+
+# PowerPC port: make the Deskbar Applications menu reflect ALL shipped apps
+# (like a real Haiku release) and auto-include future ones — derived from
+# SYSTEM_APPS the same way DESKBAR_PREFERENCES derives from SYSTEM_PREFERENCES.
+# Exclude the desktop applets (they live under "Desktop applets") and the
+# top-level AboutSystem. NetSurf is non-packaged (system/non-packaged/apps,
+# which unions into /system/apps), so its menu symlink still resolves.
+DESKBAR_APPLICATIONS = [ FFilter $(SYSTEM_APPS)
+	: $(DESKBAR_DESKTOP_APPLETS) AboutSystem ]
+	NetSurf ;
 
 
 rule HaikuImageGetSystemLibs
@@ -500,5 +512,5 @@ for repository in $(HAIKU_REPOSITORIES) {
 
 # NetSurf web browser (prebuilt, cross-built for ppc) - dropped into the
 # writable non-packaged apps dir so no packagefs activation is needed.
-CopyDirectoryToHaikuImage home config non-packaged
+CopyDirectoryToHaikuImage system non-packaged
 	: [ FDirName / work netsurf-build nspkg apps ] : apps ;

@@ -19,6 +19,7 @@ for architectureObject in [ MultiArchSubDirSetup ] {
 
 		UsePrivateSystemHeaders ;
 
+		local ppcSslLibs ;
 		if [ FIsBuildFeatureEnabled openssl ] {
 			SubDirC++Flags -DOPENSSL_ENABLED -DOPENSSL_API_COMPAT=10101 -DOPENSSL_NO_DEPRECATED=1 ;
 			UseBuildFeatureHeaders openssl ;
@@ -27,6 +28,16 @@ for architectureObject in [ MultiArchSubDirSetup ] {
 				: [ BuildFeatureAttribute openssl : headers ] ;
 				# Dependency needed to trigger downloading/unzipping the package
 				# before compiling the files.
+			SetupFeatureObjectsDir ssl ;
+		} else if $(architecture) = ppc {
+			# PowerPC port: no openssl build-feature package exists, but
+			# OpenSSL 3.0.22 is cross-built in-tree (static). Wire TLS in
+			# directly so libbnetapi.so gets a real BSecureSocket.
+			local opensslDir = [ FDirName $(HAIKU_TOP) src libs openssl_ppc ] ;
+			SubDirC++Flags -DOPENSSL_ENABLED -DOPENSSL_API_COMPAT=10101 -DOPENSSL_NO_DEPRECATED=1 ;
+			SubDirSysHdrs [ FDirName $(opensslDir) include ] ;
+			ppcSslLibs = [ FDirName $(opensslDir) lib libssl.a ]
+				[ FDirName $(opensslDir) lib libcrypto.a ] ;
 			SetupFeatureObjectsDir ssl ;
 		} else {
 			SetupFeatureObjectsDir no-ssl ;
@@ -61,6 +72,7 @@ for architectureObject in [ MultiArchSubDirSetup ] {
 			:
 			be shared $(TARGET_NETWORK_LIBS) [ TargetLibstdc++ ]
 			[ TargetLibsupc++ ] [ BuildFeatureAttribute openssl : libraries ]
+			$(ppcSslLibs)
 			[ BuildFeatureAttribute icu : libraries ]
 			;
 	}
