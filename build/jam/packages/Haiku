@@ -495,6 +495,14 @@ for linkTarget in $(DESKBAR_APPLICATIONS) {
 		: ../../../../apps/$(linkTarget) : $(linkTarget) ;
 }
 
+# PowerPC port: NetSurf is a prebuilt binary installed under non-packaged apps
+# (system/non-packaged/apps), so its Deskbar menu link must target there rather
+# than the packaged apps dir.
+if $(TARGET_PACKAGING_ARCH) = ppc {
+	AddSymlinkToPackage data deskbar menu Applications
+		: ../../../../non-packaged/apps/NetSurf : NetSurf ;
+}
+
 # "Desktop applets" links
 AddDirectoryToPackage data deskbar menu Desktop\ applets
 	: deskbar-applets.rdef ;
