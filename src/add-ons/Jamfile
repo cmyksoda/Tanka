@@ -9,6 +9,7 @@ SubInclude HAIKU_TOP src add-ons input_server ;
 SubInclude HAIKU_TOP src add-ons kernel ;
 SubInclude HAIKU_TOP src add-ons locale ;
 SubInclude HAIKU_TOP src add-ons mail_daemon ;
+SubInclude HAIKU_TOP src add-ons opengl ;
 SubInclude HAIKU_TOP src add-ons media ;
 SubInclude HAIKU_TOP src add-ons network_settings ;
 SubInclude HAIKU_TOP src add-ons print ;

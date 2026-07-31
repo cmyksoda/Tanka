@@ -1,0 +1,42 @@
+SubDir HAIKU_TOP src kits opengl ;
+
+SetSubDirSupportedPlatformsBeOSCompatible ;
+
+UsePrivateHeaders interface ;
+UsePrivateSystemHeaders ;
+
+local sources =
+	GLView.cpp
+	GLDispatcher.cpp
+	GLRenderer.cpp
+	GLRendererRoster.cpp
+	;
+
+
+UseHeaders [ FDirName $(HAIKU_TOP) headers os opengl ] : true ;
+
+
+# In-tree Mesa 7.4.4 fork (resurrected for the ppc port)
+local mesaDir = [ FDirName $(HAIKU_TOP) src libs mesa mesa ] ;
+UseLibraryHeaders mesa ;
+UseHeaders $(mesaDir) ;
+UseHeaders [ FDirName $(mesaDir) main ] ;
+UseHeaders [ FDirName $(mesaDir) glapi ] ;
+
+
+LINKFLAGS on libGL.so = [ on libGL.so return $(LINKFLAGS) ]
+	-Xlinker --strip-debug ;
+
+SharedLibrary libGL.so : $(sources) :
+
+	# In-tree Mesa 7.4.4 fork:
+	libmesa.a
+	<mesa>glapi-dispatching.o
+	<opengl>sgi-glu.o
+
+	# External libraries:
+	be
+	game			# BWindowScreen needed by BGLScreen stub class
+	[ TargetLibstdc++ ]
+	[ TargetLibsupc++ ]
+;

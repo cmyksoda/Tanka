@@ -1,6 +1,7 @@
 SubDir HAIKU_TOP src apps glteapot ;
-UseBuildFeatureHeaders glu ;
-UseBuildFeatureHeaders mesa ;
+# In-tree GL (resurrected Mesa 7.4.4 fork) instead of the ppc-unavailable
+# mesa/glu build-feature packages.
+UseHeaders [ FDirName $(HAIKU_TOP) headers os opengl ] : true ;
 
 local sources =
 	FPS.cpp
@@ -11,17 +12,10 @@ local sources =
 	TeapotApp.cpp
 ;
 
-Includes [ FGristFiles $(sources) ] :
-	[ BuildFeatureAttribute glu : headers ]
-	[ BuildFeatureAttribute mesa : headers ]
-	;
-
 Application GLTeapot :
 	$(sources)
 	:
-	be game localestub [ TargetLibsupc++ ]
-	[ BuildFeatureAttribute glu : library ]
-	[ BuildFeatureAttribute mesa : library ]
+	be game localestub libGL.so [ TargetLibsupc++ ]
 	: GLTeapot.rdef
 ;
 

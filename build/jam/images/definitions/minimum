@@ -186,11 +186,12 @@ SYSTEM_DEMOS = ;
 
 # --- PowerPC port: bundle the Haiku demos and a curated set of applications
 # and preferences. Limited to targets that build with the libraries available
-# on ppc: there is no mesa (OpenGL), ffmpeg, or libpng/jpeg, so the GL demos
-# and the media/image-heavy apps are intentionally omitted. All items below
-# were verified to compile for ppc.
+# on ppc. OpenGL is now provided in-tree (resurrected Mesa 7.4.4 fork:
+# libGL.so + Mesa Software Renderer), so GLTeapot is included; ffmpeg and
+# libpng/jpeg are still absent, so media/image-heavy apps remain omitted.
 SYSTEM_DEMOS += [ FFilterByBuildFeatures
 	Chart
+	GLTeapot
 	Clock
 	FontDemo
 	Mandelbrot
@@ -238,6 +239,7 @@ rule HaikuImageGetSystemLibs
 			libdebugger.so@primary
 			libdevice.so
 			libgame.so
+			libGL.so
 			libgnu.so
 			libmedia.so
 			libnetwork.so
@@ -385,7 +387,7 @@ SYSTEM_ADD_ONS_DRIVERS_NET = [ FFilterByBuildFeatures
 	}@ # x86,x86_64,riscv64
 
 	ppc @{
-		gem
+		#gem  # TEMP: gem attach hangs on Pismo; disabled to reach desktop
 	}@ # ppc
 
 	etherpci

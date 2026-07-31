@@ -19,6 +19,8 @@
 
 #include "GLObject.h"
 
+#include <ByteOrder.h>
+
 #include <Application.h>
 #include <GL/gl.h>
 #include <InterfaceKit.h>
@@ -230,12 +232,12 @@ TriangleObject::TriangleObject(ObjectView* ov)
 	size_t numPt = size / sizeof(int32);
 	for (size_t i = 0; i < numPt; i += 6) {
 		point p;
-		p.x = 1e-6 * arrayOfPoints[i];
-		p.y = 1e-6 * arrayOfPoints[i + 1];
-		p.z = 1e-6 * arrayOfPoints[i + 2];
-		p.nx = 1e-6 * arrayOfPoints[i + 3];
-		p.ny = 1e-6 * arrayOfPoints[i + 4];
-		p.nz = 1e-6 * arrayOfPoints[i + 5];
+		p.x = 1e-6 * (int32)B_LENDIAN_TO_HOST_INT32(arrayOfPoints[i]);
+		p.y = 1e-6 * (int32)B_LENDIAN_TO_HOST_INT32(arrayOfPoints[i + 1]);
+		p.z = 1e-6 * (int32)B_LENDIAN_TO_HOST_INT32(arrayOfPoints[i + 2]);
+		p.nx = 1e-6 * (int32)B_LENDIAN_TO_HOST_INT32(arrayOfPoints[i + 3]);
+		p.ny = 1e-6 * (int32)B_LENDIAN_TO_HOST_INT32(arrayOfPoints[i + 4]);
+		p.nz = 1e-6 * (int32)B_LENDIAN_TO_HOST_INT32(arrayOfPoints[i + 5]);
 
 		if (fabs(p.x) > maxp)
 			maxp = fabs(p.x);
@@ -261,9 +263,9 @@ TriangleObject::TriangleObject(ObjectView* ov)
 	size_t numTriPoints = size / sizeof(int32);
 	for (size_t i = 0; i < numTriPoints; i += 3) {
 		tri t;
-		t.p1 = arrayOfTriangles[i];
-		t.p2 = arrayOfTriangles[i + 1];
-		t.p3 = arrayOfTriangles[i + 2];
+		t.p1 = B_LENDIAN_TO_HOST_INT32(arrayOfTriangles[i]);
+		t.p2 = B_LENDIAN_TO_HOST_INT32(arrayOfTriangles[i + 1]);
+		t.p3 = B_LENDIAN_TO_HOST_INT32(arrayOfTriangles[i + 2]);
 		fTriangles.add(t);
 	}
 

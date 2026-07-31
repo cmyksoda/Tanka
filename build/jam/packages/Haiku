@@ -250,6 +250,11 @@ AddFilesToPackage preferences
 AddFilesToPackage demos
 	: $(SYSTEM_DEMOS) ;
 
+# PowerPC port: in-tree OpenGL software renderer add-on
+AddFilesToPackage add-ons opengl :
+	Mesa\ Software\ Renderer
+	;
+
 SEARCH on install-wifi-firmwares.sh = [ FDirName $(HAIKU_TOP) data bin ] ;
 AddFilesToPackage bin : install-wifi-firmwares.sh ;
 
@@ -411,21 +416,21 @@ AddFilesToPackage add-ons Network\ Settings :
 	TelnetService
 	;
 
-AddFilesToPackage add-ons Tracker :
-	FileType
-	Label\ as…
-	Mark\ as…
-	Mark\ as\ Read
-	Open\ Target\ Folder
-	Open\ Terminal
-	ZipOMatic
-	;
-AddSymlinkToPackage add-ons Tracker
-	: /boot/system/preferences/Backgrounds : Background ;
-AddSymlinkToPackage add-ons Tracker
-	: /boot/system/apps/TextSearch : TextSearch ;
-AddSymlinkToPackage add-ons Tracker
-	: /boot/system/apps/DiskUsage : DiskUsage ;
+#PPCTEMP AddFilesToPackage add-ons Tracker :
+#PPCTEMP 	FileType
+#PPCTEMP 	Label\ as…
+#PPCTEMP 	Mark\ as…
+#PPCTEMP 	Mark\ as\ Read
+#PPCTEMP 	Open\ Target\ Folder
+#PPCTEMP 	Open\ Terminal
+#PPCTEMP 	ZipOMatic
+#PPCTEMP 	;
+#PPCTEMP AddSymlinkToPackage add-ons Tracker
+#PPCTEMP 	: /boot/system/preferences/Backgrounds : Background ;
+#PPCTEMP AddSymlinkToPackage add-ons Tracker
+#PPCTEMP 	: /boot/system/apps/TextSearch : TextSearch ;
+#PPCTEMP AddSymlinkToPackage add-ons Tracker
+#PPCTEMP 	: /boot/system/apps/DiskUsage : DiskUsage ;
 
 AddFilesToPackage add-ons input_server devices :
 	<input>keyboard
