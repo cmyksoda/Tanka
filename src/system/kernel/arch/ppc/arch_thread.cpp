@@ -160,6 +160,9 @@ arch_thread_init_tls(Thread *thread)
 }
 
 
+extern "C" void ppc_sync_kernel_stack(Thread* thread);
+
+
 void
 arch_thread_context_switch(Thread *t_from, Thread *t_to)
 {
@@ -167,8 +170,7 @@ arch_thread_context_switch(Thread *t_from, Thread *t_to)
 	// The exception entry code (ppc_exception_tail) reads context->kernel_stack
 	// to know which stack to switch to when an exception is taken from user
 	// mode. (The previous EAR write was dead - nothing ever read EAR back.)
-	ppc_get_cpu_exception_context(smp_get_current_cpu())->kernel_stack
-		= (void*)(t_to->kernel_stack_top - 8);
+	ppc_sync_kernel_stack(t_to);
 
     // switch the asids if we need to
 	if (t_to->team->address_space != NULL) {
@@ -202,8 +204,7 @@ arch_thread_enter_userspace(Thread *thread, addr_t entry, void *arg1, void *arg2
 
 	// Make sure this CPU's exception context points at our kernel stack, so
 	// the first syscall/interrupt taken from user mode lands on a valid stack.
-	ppc_get_cpu_exception_context(smp_get_current_cpu())->kernel_stack
-		= (void*)(thread->kernel_stack_top - 8);
+	ppc_sync_kernel_stack(thread);
 
 	// Build a synthetic iframe describing the initial user state and let the
 	// standard exception-return path (rfi) drop us into user mode.
@@ -439,8 +440,7 @@ arch_restore_fork_frame(struct arch_fork_arg *arg)
 {
 	Thread* thread = thread_get_current_thread();
 
-	ppc_get_cpu_exception_context(smp_get_current_cpu())->kernel_stack
-		= (void*)(thread->kernel_stack_top - 8);
+	ppc_sync_kernel_stack(thread);
 
 	struct iframe frame = arg->iframe;
 	disable_interrupts();

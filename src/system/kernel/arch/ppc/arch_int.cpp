@@ -104,6 +104,27 @@ print_iframe(struct iframe *frame)
 // console and the framebuffer, and slows the boot dramatically).
 #define TRACE_PPC_EXCEPTIONS 0
 
+// Keep the per-CPU exception context's kernel_stack pointing just below the
+// deepest live iframe. A nested USERLAND exception (e.g. an interrupt taken
+// while a signal trampoline runs) then stacks BELOW the suspended outer frame
+// instead of aliasing the fixed kernel_stack_top and clobbering it (the ppc
+// nested-signal freeze/corruption). A nested userland exception implies the
+// outer kernel activity already returned to user (rfi), so the space below its
+// iframe is free to reuse.
+extern "C" void ppc_sync_kernel_stack(Thread* thread);
+void
+ppc_sync_kernel_stack(Thread* thread)
+{
+	struct iframe_stack* st = &thread->arch_info.iframes;
+	addr_t ks;
+	if (st->index > 0)
+		ks = (addr_t)st->frames[st->index - 1] - 64;
+	else
+		ks = (addr_t)thread->kernel_stack_top - 8;
+	ppc_get_cpu_exception_context(smp_get_current_cpu())->kernel_stack = (void*)ks;
+}
+
+
 extern "C" void ppc_exception_entry(int vector, struct iframe *iframe);
 void
 ppc_exception_entry(int vector, struct iframe *iframe)
@@ -122,6 +143,8 @@ ppc_exception_entry(int vector, struct iframe *iframe)
 		ppc_push_iframe(&thread->arch_info.iframes, iframe);
 	else
 		ppc_push_iframe(&gBootFrameStack, iframe);
+	if (thread)
+		ppc_sync_kernel_stack(thread);
 
 	// An exception taken from user mode is a kernel entry, just like a
 	// syscall. Pair it with thread_at_kernel_entry/exit so pending signals are
@@ -216,13 +239,11 @@ ppc_exception_entry(int vector, struct iframe *iframe)
 				break;
 			}
 
-dprintf("handling I/O interrupts...\n");
 			int irq;
 			while ((irq = sPIC->acknowledge_io_interrupt(sPICCookie)) >= 0) {
 // TODO: correctly pass level-triggered vs. edge-triggered to the handler!
 				io_interrupt_handler(irq, true);
 			}
-dprintf("handling I/O interrupts done\n");
 			break;
 		}
 
@@ -407,6 +428,8 @@ dprintf("handling I/O interrupts done\n");
 		ppc_pop_iframe(&thread->arch_info.iframes);
 	else
 		ppc_pop_iframe(&gBootFrameStack);
+	if (thread)
+		ppc_sync_kernel_stack(thread);
 }
 
 
