@@ -539,8 +539,17 @@ PPCVMTranslationMapClassic::Map(addr_t virtualAddress,
 		if (entry->valid)
 			continue;
 
+		// This slot lives in the SECONDARY PTEG, so the entry must be tagged
+		// secondary_hash = true (H=1). The hardware page-table walker checks the
+		// primary PTEG for H=0 entries and the secondary PTEG for H=1 entries;
+		// an H=0 entry placed in the secondary group matches neither walk, so
+		// the CPU can never translate the address (DSI fault), and our own
+		// LookupPageTableEntry() misses it too. This only triggers once a
+		// primary PTEG fills all 8 slots (heavy memory pressure), which is why
+		// it manifested only on real hardware under load; dingusppc's MMU model
+		// resolves the entry regardless of the H bit and so never faulted.
 		m->FillPageTableEntry(entry, virtualSegmentID, virtualAddress,
-			physicalAddress, protection, memoryType, false);
+			physicalAddress, protection, memoryType, true);
 		fMapCount++;
 		ppc_sync_executable_mapping(this, virtualAddress, attributes);
 		return B_OK;
@@ -622,6 +631,45 @@ PPCVMTranslationMapClassic::Map(addr_t virtualAddress,
 		victim = sEvictionRotor & 7;
 	}
 	sEvictionRotor++;
+
+	// Invalidate the victim's hardware TLB entry before we overwrite its
+	// page-table slot. The classic page table is only a *cache* of the
+	// software mappings, but the CPU's TLB independently caches translations;
+	// dropping the victim's PTE here does NOT drop its TLB entry. If we leave
+	// it, the victim's address keeps resolving (via the stale TLB) to its old
+	// physical page. Neither our unmap nor our remap path invalidates it: both
+	// tlbie only when they find a live PTE, and an evicted address has none. A
+	// later remap of the same address would then be shadowed by the stale
+	// translation, and a freed-then-recycled page would be silently aliased.
+	// (Real-hardware only; dingusppc has no TLB model.)
+	// tlbie selects the TLB congruence class by effective-address bits and is
+	// independent of the VSID, so it suffices to reconstruct the victim's low
+	// page-index bits from its PTE and the group it occupies:
+	//   groupIndex == (victim->secondary_hash ? ~PrimaryHash : PrimaryHash) & mask
+	//   PrimaryHash == (VSID & 0x7ffff) ^ (pageIndex & 0xffff)
+	// so  pageIndex&mask == ((victim->secondary_hash ? ~groupIndex : groupIndex)
+	//                          ^ (VSID & 0x7ffff)) & mask
+	// and the effective address is pageIndex << 12 (VA[12:27]).
+	{
+		page_table_entry* victimEntry
+			= &victimGroups[victimGroup]->entry[victim];
+		if (victimEntry->valid) {
+			uint32 mask = m->PageTableHashMask();
+			uint32 groupIndex = (victimGroup == 0
+				? primaryHash
+				: page_table_entry::SecondaryHash(primaryHash)) & mask;
+			uint32 victimPrimaryMasked = victimEntry->secondary_hash != 0
+				? (~groupIndex & mask) : (groupIndex & mask);
+			uint32 victimPageIndex = (victimPrimaryMasked
+				^ (victimEntry->virtual_segment_id & 0x7ffff)) & mask;
+			addr_t victimEA = (addr_t)victimPageIndex << 12;
+			ppc_sync();
+			tlbie(victimEA);
+			eieio();
+			tlbsync();
+			ppc_sync();
+		}
+	}
 
 	m->FillPageTableEntry(&victimGroups[victimGroup]->entry[victim],
 		virtualSegmentID, virtualAddress, physicalAddress, protection,
