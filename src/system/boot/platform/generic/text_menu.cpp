@@ -223,14 +223,23 @@ draw_menu(Menu *menu)
 	console_set_color(kTextColor, kBackgroundColor);
 	console_clear_screen();
 
+#ifdef HAIKU_DISTRO_COMPATIBILITY_COMPATIBLE
 	print_centered(1, "Welcome to");
 	print_centered(2, "Tabby");
+#else
+	print_centered(1, "Welcome to the");
+	print_centered(2, "Haiku Boot Loader");
+#endif
 
 	console_set_color(kCopyrightColor, kBackgroundColor);
 	print_right(console_height() - 1, get_haiku_revision());
 
 	console_set_color(kCopyrightColor, kBackgroundColor);
+#ifdef HAIKU_DISTRO_COMPATIBILITY_COMPATIBLE
 	print_centered(4, "Based on Haiku - Copyright Haiku, Inc.");
+#else
+	print_centered(4, "Copyright 2004-2026 Haiku, Inc.");
+#endif
 
 	if (menu->Title()) {
 		console_set_cursor(kOffsetX, kFirstLine - 2);

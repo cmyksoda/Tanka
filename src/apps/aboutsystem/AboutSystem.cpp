@@ -1546,6 +1546,7 @@ AboutView::_CreateCreditsView()
 		fCreditsView, B_WILL_DRAW | B_FRAME_EVENTS, false, true,
 		B_PLAIN_BORDER);
 
+#ifdef HAIKU_DISTRO_COMPATIBILITY_COMPATIBLE
 	// Tabby distribution disclaimer (per Haiku distribution guidelines).
 	BFont tabbyFont(be_bold_font);
 	tabbyFont.SetSize(tabbyFont.Size() + 4);
@@ -1563,6 +1564,7 @@ AboutView::_CreateCreditsView()
 		".\nThe Tabby Maintainers are not associated with the Haiku "
 		"project.\n\nThis software is work in progress and has missing "
 		"functionality as well as many bugs.\n\n"));
+#endif
 
 	// Haiku copyright
 	BFont font(be_bold_font);

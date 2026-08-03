@@ -57,7 +57,11 @@ main(stage2_args *args)
 	if (vfs_init(args) < B_OK)
 		panic("Could not initialize VFS!\n");
 
+#ifdef HAIKU_DISTRO_COMPATIBILITY_COMPATIBLE
 	dprintf("Welcome to the Tabby boot loader (based on Haiku)!\n");
+#else
+	dprintf("Welcome to the Haiku boot loader!\n");
+#endif
 	dprintf("Haiku revision: %s\n", get_haiku_revision());
 
 	bool mountedAllVolumes = false;

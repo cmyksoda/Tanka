@@ -56,7 +56,9 @@ struct FramebufferFont {
 extern FramebufferFont smallFont;
 
 // The build label drawn centered under the boot-splash icons (pre-alpha).
+#ifdef HAIKU_DISTRO_COMPATIBILITY_COMPATIBLE
 static const char* const kSplashBuildLabel = "pre-pre-pre-alpha";
+#endif
 
 
 static void
@@ -260,12 +262,14 @@ boot_splash_init(uint8 *bootSplash, uint8 *bootSplashLogo)
 		blit(params, sInfo->depth);
 	}
 
+#ifdef HAIKU_DISTRO_COMPATIBILITY_COMPATIBLE
 	// Stamp the build label centered just below the icon row.
 	int iconsWidth, iconsHeight, iconsX, iconsY;
 	compute_splash_icons_placement(sInfo->width, sInfo->height,
 		iconsWidth, iconsHeight, iconsX, iconsY);
 	draw_splash_label(kSplashBuildLabel, sInfo->width / 2,
 		iconsY + iconsHeight + 6, 2);
+#endif
 }
 
 
