@@ -32,6 +32,10 @@ void boot_splash_init(uint8 * boot_splash, uint8 * boot_splash_logo);
 void boot_splash_uninit(void);
 void boot_splash_set_stage(int stage);
 
+// Update / stop the loading status line (Tabby boot progress).
+void boot_splash_set_status(const char* text);
+void boot_splash_status_done(void);
+
 #ifdef __cplusplus
 }
 #endif

@@ -43,6 +43,9 @@ All rights reserved.
 #include <Debug.h>
 #include <IconUtils.h>
 #include <NodeInfo.h>
+#include <DataIO.h>
+#include <TranslationUtils.h>
+#include <TranslatorFormats.h>
 
 #include "icons.h"
 
@@ -117,21 +120,14 @@ TBarMenuBar::TBarMenuBar(BRect frame, const char* name, TBarView* barView)
 	TDeskbarMenu* beMenu = new TDeskbarMenu(barView);
 	TBarWindow::SetDeskbarMenu(beMenu);
 
+	// Tabby: the leaf is a PNG (paw) resource; decode it to a bitmap.
 	BBitmap* icon = NULL;
 	size_t dataSize;
-	const void* data = AppResSet()->FindResource(B_VECTOR_ICON_TYPE,
+	const void* data = AppResSet()->FindResource(B_PNG_FORMAT,
 		R_LeafLogoBitmap, &dataSize);
 	if (data != NULL) {
-		// seems valid, scale bitmap according to be_bold_font size
-		float width = std::max(63.f, ceilf(63 * be_bold_font->Size() / 12.f));
-		float height = std::max(22.f, ceilf(22 * be_bold_font->Size() / 12.f));
-		icon = new BBitmap(BRect(0, 0, width - 1, height - 1), B_RGBA32);
-		if (icon->InitCheck() != B_OK
-			|| BIconUtils::GetVectorIcon((const uint8*)data, dataSize, icon)
-					!= B_OK) {
-			delete icon;
-			icon = NULL;
-		}
+		BMemoryIO stream(data, dataSize);
+		icon = BTranslationUtils::GetBitmap(&stream);
 	}
 
 	fDeskbarMenuItem = new TBarMenuTitle(0.0f, 0.0f, icon, beMenu, fBarView);

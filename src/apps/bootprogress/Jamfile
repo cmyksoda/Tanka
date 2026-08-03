@@ -1,0 +1,7 @@
+SubDir HAIKU_TOP src apps bootprogress ;
+
+Application BootProgress :
+	BootProgress.cpp
+	: be [ TargetLibsupc++ ]
+	: BootProgress.rdef
+	;

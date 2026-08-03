@@ -127,6 +127,7 @@ SYSTEM_BIN = [ FFilterByBuildFeatures
 
 SYSTEM_APPS = [ FFilterByBuildFeatures
 	AboutSystem
+	BootProgress
 	BootManager@x86,x86_64
 	CharacterMap
 	Debugger@libedit
@@ -232,7 +233,7 @@ SYSTEM_PREFERENCES += [ FFilterByBuildFeatures
 # top-level AboutSystem. NetSurf is non-packaged (system/non-packaged/apps,
 # which unions into /system/apps), so its menu symlink still resolves.
 DESKBAR_APPLICATIONS = [ FFilter $(SYSTEM_APPS)
-	: $(DESKBAR_DESKTOP_APPLETS) AboutSystem ] ;
+	: $(DESKBAR_DESKTOP_APPLETS) AboutSystem BootProgress ] ;
 
 
 rule HaikuImageGetSystemLibs

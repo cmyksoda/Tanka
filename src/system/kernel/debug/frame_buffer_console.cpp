@@ -16,6 +16,7 @@
 #include <kernel.h>
 #include <lock.h>
 #include <boot_item.h>
+#include <boot_splash.h>
 #include <vm/vm.h>
 #include <fs/devfs.h>
 #include <boot/kernel_args.h>
@@ -564,6 +565,9 @@ _user_frame_buffer_update(addr_t baseAddress, int32 width, int32 height,
 	int32 depth, int32 bytesPerRow)
 {
 	debug_stop_screen_debug_output();
+	boot_splash_status_done();
+		// app_server is taking over the framebuffer; stop the boot status line
+		// so later driver loads cannot draw over the live desktop.
 
 	if (geteuid() != 0)
 		return B_NOT_ALLOWED;

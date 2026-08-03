@@ -1546,6 +1546,24 @@ AboutView::_CreateCreditsView()
 		fCreditsView, B_WILL_DRAW | B_FRAME_EVENTS, false, true,
 		B_PLAIN_BORDER);
 
+	// Tabby distribution disclaimer (per Haiku distribution guidelines).
+	BFont tabbyFont(be_bold_font);
+	tabbyFont.SetSize(tabbyFont.Size() + 4);
+	fCreditsView->SetFontAndColor(&tabbyFont, B_FONT_ALL, &fHaikuGreenColor);
+	fCreditsView->Insert("Tabby\n");
+	fCreditsView->SetFontAndColor(be_plain_font, B_FONT_ALL, &fTextColor);
+	fCreditsView->Insert(B_TRANSLATE(
+		"Tabby is based on Haiku, but it is not the official distribution. "
+		"For information about the official Haiku project, please visit "));
+	fCreditsView->SetFontAndColor(be_plain_font, B_FONT_ALL, &fLinkColor);
+	fCreditsView->InsertHyperText("https://haiku-os.org",
+		new URLAction("https://haiku-os.org"));
+	fCreditsView->SetFontAndColor(be_plain_font, B_FONT_ALL, &fTextColor);
+	fCreditsView->Insert(B_TRANSLATE(
+		".\nThe Tabby Maintainers are not associated with the Haiku "
+		"project.\n\nThis software is work in progress and has missing "
+		"functionality as well as many bugs.\n\n"));
+
 	// Haiku copyright
 	BFont font(be_bold_font);
 	font.SetSize(font.Size() + 4);

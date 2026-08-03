@@ -27,7 +27,7 @@ resource(1, "logo.png") #'PNG ' import "../../../data/artwork/HAIKU logo - black
 resource(2, "logo_dark.png") #'PNG ' import "../../../data/artwork/HAIKU logo - white on transparent - tiny - versioned.png";
 #endif
 #else
-resource(1, "walter_logo.png") #'PNG ' import "../../../data/artwork/Walter logo.png";
+resource(1, "walter_logo.png") #'PNG ' import "../../../data/artwork/tabby_logo.png";
 #endif
 
 resource vector_icon {

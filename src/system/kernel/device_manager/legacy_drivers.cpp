@@ -10,6 +10,7 @@
 #include <errno.h>
 #include <new>
 #include <stdio.h>
+#include <string.h>
 
 #include <FindDirectory.h>
 #include <image.h>
@@ -17,6 +18,7 @@
 
 #include <boot_device.h>
 #include <boot/kernel_args.h>
+#include <boot_splash.h>
 #include <elf.h>
 #include <find_directory_private.h>
 #include <fs/devfs.h>
@@ -1164,6 +1166,13 @@ try_drivers(DriverEntryList& list)
 			if (legacy_driver_add(entry->path) == B_OK) {
 				// we have a driver
 				dprintf("loaded driver %s\n", entry->path);
+
+				// Show boot progress on the splash (Tabby): the driver leaf name.
+				const char* leaf = strrchr(entry->path, '/');
+				char progress[64];
+				snprintf(progress, sizeof(progress), "Loading %s",
+					leaf != NULL ? leaf + 1 : entry->path);
+				boot_splash_set_status(progress);
 			}
 
 			unload_kernel_add_on(image);

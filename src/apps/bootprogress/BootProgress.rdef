@@ -1,0 +1,16 @@
+
+resource app_signature "application/x-vnd.Tabby-BootProgress";
+
+resource app_flags B_SINGLE_LAUNCH | B_BACKGROUND_APP;
+
+resource app_version {
+	major  = 0,
+	middle = 1,
+	minor  = 0,
+
+	variety = B_APPV_ALPHA,
+	internal = 0,
+
+	short_info = "BootProgress",
+	long_info  = "Tabby first-boot progress"
+};
