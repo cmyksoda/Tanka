@@ -217,12 +217,12 @@ gem_pci_attach(device_t dev)
 
 #if defined(__powerpc__) || defined(__sparc64__)
 	OF_getetheraddr(dev, sc->sc_enaddr);
-	if (OF_getprop(ofw_bus_get_node(dev), GEM_SHARED_PINS, buf,
-	    sizeof(buf)) > 0) {
-		buf[sizeof(buf) - 1] = '\0';
-		if (strcmp(buf, GEM_SHARED_PINS_SERDES) == 0)
-			sc->sc_flags |= GEM_SERDES;
-	}
+	// Skip the "shared-pins" SERDES probe: ofw_bus_get_node() + OF_getprop()
+	// make LIVE OpenFirmware calls, which are not reliably callable from the
+	// kernel on this port and INTERMITTENTLY HANG gem attach (seen on the
+	// PowerBook3,5 TiBook and the Pismo). The built-in Apple GMAC on these Macs
+	// is copper (MII), never SERDES, so leaving GEM_SERDES clear is correct.
+	(void)buf;
 #else
 	/*
 	 * Dig out VPD (vital product data) and read NA (network address).
