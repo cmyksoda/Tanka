@@ -1,5 +1,5 @@
 /*
- * VIA-CUDA ADB input driver for PowerPC Macs (and dingusppc).
+ * VIA-CUDA / VIA-PMU ADB input driver for PowerPC Macs (and dingusppc).
  *
  * Copyright 2026, Sean Malseed.
  * Distributed under the terms of the MIT License.
@@ -24,6 +24,8 @@
 #include <stdio.h>
 
 #include <keyboard_mouse_driver.h>
+#include <PCI.h>
+#include <module.h>
 
 
 #define INFO(x...)		dprintf("adb: " x)
@@ -35,7 +37,7 @@ int32 api_version = B_CUR_DRIVER_API_VERSION;
 
 // VIA register indices; byte offset of register N is (N << 9) (regs 0x200 apart).
 enum {
-	VIA_B    = 0x00, VIA_SR = 0x0A, VIA_ACR = 0x0B,
+	VIA_B    = 0x00, VIA_DIRB = 0x02, VIA_SR = 0x0A, VIA_ACR = 0x0B,
 	VIA_PCR  = 0x0C, VIA_IFR = 0x0D, VIA_IER = 0x0E,
 };
 
@@ -61,31 +63,88 @@ enum {
 #define VIA_OFFSET			0x16000
 #define VIA_CUDA_IRQ		0x12
 
+// --- VIA-PMU (new-world PowerBooks: Pismo = UniNorth + KeyLargo) ---
+// Same 6522 VIA register layout as Cuda (regs 0x200 apart) but its own
+// handshake + packet protocol. Handshake bits in VIA_B (active low): TACK is an
+// input (PMU->host), TREQ an output (host->PMU); there is no TIP. Protocol from
+// Linux drivers/macintosh/via-pmu.c.
+#define PMU_TACK		0x08	// transfer acknowledge (PMU -> host, input)
+#define PMU_TREQ		0x10	// transfer request     (host -> PMU, output)
+
+#define VIA_SR_INT		0x04	// shift-register interrupt (IFR/IER)
+#define VIA_CB1_INT		0x10	// CB1 transition = PMU has data (IFR/IER)
+
+#define PMU_ADB_CMD		0x20	// "send an ADB packet" command
+#define PMU_ADB_POLL_OFF	0x21	// disable ADB autopoll
+#define PMU_INT_ACK		0x78	// "read interrupt/autopoll data" command
+#define PMU_INT_ADB		0x10	// data[0] bit: reply/autopoll is ADB
+#define PMU_INT_ADB_AUTO	0x04	// data[0] bit: unsolicited autopoll
+#define PMU_INT_TICK		0x80	// data[0] bit: 1-second tick
+#define PMU_SET_INTR_MASK	0x70	// set which PMU interrupts are delivered
+#define PMU_SYSTEM_READY	0xdf	// tell the PMU the OS is up (KeyLargo)
+// KeyLargo PMU interrupt mask (matches Linux): PCEJECT|SNDBRT|ADB|ENV|TICK.
+#define PMU_INTR_MASK_VALUE	0xdc	// Linux KeyLargo: PCEJECT|SNDBRT|ADB|ENV|TICK
+
+#define PCI_VENDOR_APPLE	0x106b	// KeyLargo-family mac-io vendor
+// via-pmu is at mac-io + 0x16000 and raises mac-io interrupt 0x19 (Pismo OF
+// device tree: reg 0x16000/0x2000, interrupts 0x19).
+#define PMU_VIA_OFFSET		0x16000
+#define PMU_IRQ				0x19
+// KeyLargo signals "PMU has data" on extint-gpio1 (IRQ 0x2f), NOT the VIA CB1.
+// The gpio block is at mac-io + 0x50; extint-gpio1's level byte is at + 0x59,
+// bit 0x02 (active low: 0 = PMU asserting). (Pismo OF: extint-gpio1 interrupts
+// 0x2f, compatible keywest-gpio1.)
+#define PMU_GPIO1_IRQ		0x2f
+#define KEYLARGO_EXTINT_GPIO1	0x59
+#define KEYLARGO_GPIO_LEVEL	0x02
+
 // Map ADB keycodes (register-0 talk data) to Haiku keycodes (as used by the
 // system keymap). Best-effort for the main keys; unmapped keys pass 0. ADB
 // keycodes are 7-bit (bit7 = key-up). Index = ADB keycode.
 static const uint8 kAdbToHaiku[128] = {
-	/* 0x00 */ 0x3c,0x3e,0x3f,0x40,0x42,0x41,0x26,0x28, // a s d f h g z x
-	/* 0x08 */ 0x25,0x27,0x00,0x24,0x29,0x2a,0x2b,0x2c, // c v (§) b q w e r
-	/* 0x10 */ 0x2e,0x2d,0x12,0x13,0x14,0x15,0x17,0x16, // y t 1 2 3 4 6 5
-	/* 0x18 */ 0x1c,0x1a,0x19,0x1b,0x21,0x18,0x30,0x20, // = 9 7 - 8 0 ] o
-	/* 0x20 */ 0x31,0x2f,0x33,0x32,0x47,0x34,0x00,0x3d, // u [ i p enter l (') j
-	/* 0x28 */ 0x45,0x38,0x43,0x39,0x3a,0x44,0x3b,0x00, // ; k , ' n m . (/)
-	/* 0x30 */ 0x26,0x5e,0x22,0x1e,0x00,0x11,0x5c,0x4b, // tab space ` back (enter) esc ctrl cmd
-	/* 0x38 */ 0x4c,0x4d,0x5d,0x5b,0x66,0x67,0x00,0x00, // shift caps opt lctrl lshift rshift
-	/* 0x40 */ 0x00,0x64,0x00,0x37,0x00,0x3a,0x00,0x1f, // . (kp) * (kp) + clear
-	/* 0x48 */ 0x00,0x00,0x00,0x23,0x5b,0x00,0x00,0x00, // = (kp) / (kp) enter
-	/* 0x50 */ 0x00,0x37,0x00,0x58,0x59,0x5a,0x48,0x49, // - (kp) 0 1 2 3
-	/* 0x58 */ 0x4a,0x53,0x54,0x55,0x63,0x64,0x65,0x00, // 4 5 6 7 8 9
-	/* 0x60 */ 0x03,0x04,0x05,0x02,0x06,0x07,0x00,0x08, // F5 F6 F7 F3 F8 F9 F11
-	/* 0x68 */ 0x00,0x0e,0x00,0x0c,0x00,0x0a,0x00,0x09, // F13 F14 F10 F12
-	/* 0x70 */ 0x00,0x0f,0x1f,0x20,0x21,0x37,0x0b,0x35, // F15 help home pgup del F4 end
-	/* 0x78 */ 0x0d,0x36,0x01,0x62,0x61,0x63,0x57,0x00, // F2 pgdn F1 left right down up
+	/* 0x00 */ 0x3c,0x3d,0x3e,0x3f,0x41,0x40,0x4c,0x4d, // a s d f h g z x
+	/* 0x08 */ 0x4e,0x4f,0x00,0x50,0x27,0x28,0x29,0x2a, // c v (§) b q w e r
+	/* 0x10 */ 0x2c,0x2b,0x12,0x13,0x14,0x15,0x17,0x16, // y t 1 2 3 4 6 5
+	/* 0x18 */ 0x1d,0x1a,0x18,0x1c,0x19,0x1b,0x32,0x2f, // = 9 7 - 8 0 ] o
+	/* 0x20 */ 0x2d,0x31,0x2e,0x30,0x47,0x44,0x42,0x46, // u [ i p enter l j '
+	/* 0x28 */ 0x43,0x45,0x33,0x53,0x55,0x51,0x52,0x54, // k ; \\ , / n m .
+	/* 0x30 */ 0x26,0x5e,0x11,0x1e,0x00,0x01,0x5c,0x5d, // tab space ` bksp - esc lctrl lcmd
+	/* 0x38 */ 0x4b,0x3b,0x66,0x00,0x56,0x67,0x60,0x00, // lshift caps lopt - rshift ropt rctrl -
+	/* 0x40 */ 0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00, // (keypad, unmapped)
+	/* 0x48 */ 0x00,0x00,0x00,0x00,0x5b,0x00,0x00,0x00, // kp-enter @ 0x4c
+	/* 0x50 */ 0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00, // (keypad, unmapped)
+	/* 0x58 */ 0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00, // (keypad, unmapped)
+	/* 0x60 */ 0x06,0x07,0x08,0x04,0x09,0x0a,0x00,0x0c, // F5 F6 F7 F3 F8 F9 - F11
+	/* 0x68 */ 0x00,0x0e,0x00,0x0f,0x00,0x0b,0x00,0x0d, // - F13 - F14 - F10 - F12
+	/* 0x70 */ 0x00,0x10,0x1f,0x20,0x21,0x34,0x05,0x35, // - F15 help home pgup del F4 end
+	/* 0x78 */ 0x03,0x36,0x02,0x61,0x63,0x62,0x57,0x00, // F2 pgdn F1 left right down up -
 };
 
 
 static area_id sRegisterArea = -1;
 static addr_t sVIABase = 0;
+static addr_t sGpioExt1 = 0;	// extint-gpio1 level byte
+
+// Which transport this machine uses (chosen in init_hardware by host bridge).
+static bool sIsPMU = false;
+
+// PMU transfer state machine (mirrors Linux via-pmu.c pmu_state).
+enum {
+	PMU_IDLE = 0, PMU_SENDING, PMU_INTACK, PMU_READING, PMU_READING_INTR
+};
+static volatile int sPmuState = PMU_IDLE;
+static uint8 sPmuReq[16];		// outgoing request bytes (data[0] = command)
+static int sPmuReqBytes = 0;
+static bool sPmuReqActive = false;
+static int sPmuIndex = 0;
+static int sPmuLen = -1;
+static int sPmuSendLen = -1;	// wire send-length rule for the current cmd
+static int sPmuReplyLen = 0;	// expected reply length (0 none, -1 length-prefixed)
+static uint8 sPmuReply[32];	// command reply (discarded)
+static uint8* sPmuReplyPtr = NULL;
+static uint8 sPmuIntr[32];		// interrupt/autopoll reply
+static volatile bool sPmuDidInput = false;
+static volatile bool sPmuCB1 = false;
 
 // Cuda receive-transaction assembly.
 static uint8 sReplyBuffer[16];
@@ -147,15 +206,23 @@ queue_key(uint8 adbCode)
 	if (info.keycode == 0)
 		return;
 
+	// Called from both the ADB interrupt handler (interrupts already off) and
+	// from driver init via pmu_drain_pending() (a normal thread, interrupts
+	// ON). acquire_spinlock() requires interrupts disabled, so save/restore
+	// them here to be safe in either context.
+	cpu_status former = disable_interrupts();
 	acquire_spinlock(&sKeyLock);
 	int next = (sKeyHead + 1) % KB_QUEUE_SIZE;
 	if (next != sKeyTail) {
 		sKeyQueue[sKeyHead] = info;
 		sKeyHead = next;
 		release_spinlock(&sKeyLock);
+		restore_interrupts(former);
 		release_sem_etc(sKeySem, 1, B_DO_NOT_RESCHEDULE);
-	} else
+	} else {
 		release_spinlock(&sKeyLock);
+		restore_interrupts(former);
+	}
 }
 
 
@@ -189,15 +256,20 @@ queue_mouse(uint32 buttons, int dx, int dy)
 	m.clicks = clicks;
 	m.timestamp = now;
 
+	// See queue_key(): safe for both interrupt and thread context.
+	cpu_status former = disable_interrupts();
 	acquire_spinlock(&sMouseLock);
 	int next = (sMouseHead + 1) % MS_QUEUE_SIZE;
 	if (next != sMouseTail) {
 		sMouseQueue[sMouseHead] = m;
 		sMouseHead = next;
 		release_spinlock(&sMouseLock);
+		restore_interrupts(former);
 		release_sem_etc(sMouseSem, 1, B_DO_NOT_RESCHEDULE);
-	} else
+	} else {
 		release_spinlock(&sMouseLock);
+		restore_interrupts(former);
+	}
 }
 
 
@@ -316,6 +388,379 @@ cuda_send_polled(const uint8* data, int length)
 	}
 	via_write(VIA_B, portB | CUDA_TIP | CUDA_BYTEACK);
 	via_write(VIA_ACR, (via_read(VIA_ACR) & ~VIA_ACR_SR_MASK) | VIA_ACR_SR_IN);
+}
+
+
+// #pragma mark - VIA-PMU transport
+
+
+static inline bool
+pmu_wait_for_ack(void)
+{
+	// Wait until TACK is negated (high). Bounded so a wedged PMU cannot hang
+	// the kernel.
+	for (int i = 0; i < 32000; i++) {
+		if ((via_read(VIA_B) & PMU_TACK) != 0)
+			return true;
+		spin(10);
+	}
+	return false;
+}
+
+
+static inline void
+pmu_send_byte(uint8 value)
+{
+	via_write(VIA_ACR, via_read(VIA_ACR) | VIA_ACR_SR_OUT);	// shift out
+	via_write(VIA_SR, value);
+	via_write(VIA_B, via_read(VIA_B) & ~PMU_TREQ);			// assert TREQ
+}
+
+
+static inline void
+pmu_recv_byte(void)
+{
+	via_write(VIA_ACR, (via_read(VIA_ACR) & ~VIA_ACR_SR_MASK) | VIA_ACR_SR_IN);
+	(void)via_read(VIA_SR);									// prime the shift-in
+	via_write(VIA_B, via_read(VIA_B) & ~PMU_TREQ);			// assert TREQ
+}
+
+
+static inline void
+pmu_sr_off(void)
+{
+	// Disable the shift register. In external-clock SR mode CB1 is the shift
+	// clock and cannot also generate the "PMU has data" (CB1) interrupt; with
+	// the SR disabled at idle, CB1 is free to signal an incoming transfer.
+	via_write(VIA_ACR, via_read(VIA_ACR) & ~VIA_ACR_SR_MASK);
+}
+
+
+static void
+pmu_start(void)
+{
+	if (!sPmuReqActive || sPmuState != PMU_IDLE)
+		return;
+	sPmuState = PMU_SENDING;
+	sPmuIndex = 1;
+	sPmuLen = sPmuSendLen;		// -1 = length byte follows; >=0 = that many bytes
+	pmu_wait_for_ack();
+	pmu_send_byte(sPmuReq[0]);
+}
+
+
+// Turn a completed ADB autopoll packet into Haiku input events. The PMU frames
+// autopoll data as [adb_command, reg0_byte0, reg0_byte1, ...]; the ADB device
+// address is the high nibble of the command byte (2 = keyboard, 3 = mouse).
+static void
+pmu_process_adb(uint8* buf, int length)
+{
+	if (length < 3)
+		return;
+	uint8 address = (buf[0] >> 4) & 0x0f;
+	if (address == 2) {
+		if (buf[1] != 0xff)
+			queue_key(buf[1]);
+		if (buf[2] != 0xff)
+			queue_key(buf[2]);
+		sPmuDidInput = true;
+	} else if (address == 3) {
+		// Trackpad in default mode = standard 2-byte ADB mouse:
+		//   buf[1]: bit7 = ~button,  bits0-6 = signed Y
+		//   buf[2]: bit7 = ~button2, bits0-6 = signed X
+		uint32 buttons = 0;
+		if ((buf[1] & 0x80) == 0)
+			buttons |= ADB_PRIMARY_BUTTON;
+		if ((buf[2] & 0x80) == 0)
+			buttons |= ADB_SECONDARY_BUTTON;
+		int dy = (int)(buf[1] & 0x7f); if (dy & 0x40) dy -= 0x80;
+		int dx = (int)(buf[2] & 0x7f); if (dx & 0x40) dx -= 0x80;
+		queue_mouse(buttons, dx, dy);
+		sPmuDidInput = true;
+	}
+}
+
+
+static void
+pmu_handle_data(uint8* data, int length)
+{
+	if (length < 1)
+		return;
+	if ((data[0] & PMU_INT_ADB) != 0 && (data[0] & PMU_INT_ADB_AUTO) != 0)
+		pmu_process_adb(data + 1, length - 1);
+	// Non-ADB PMU interrupts (battery, tick, environment, ...) are ignored.
+}
+
+
+// Per-byte shift-register interrupt: advances the send/receive state machine.
+static void
+pmu_sr_intr(void)
+{
+	if ((via_read(VIA_B) & PMU_TREQ) != 0)
+		return;								// spurious: TREQ not asserted
+	for (int i = 0; i < 32000 && (via_read(VIA_B) & PMU_TACK) != 0; i++)
+		spin(1);							// wait for TACK asserted (low)
+
+	uint8 bite = 0;
+	if (sPmuState == PMU_READING || sPmuState == PMU_READING_INTR)
+		bite = via_read(VIA_SR);
+
+	via_write(VIA_B, via_read(VIA_B) | PMU_TREQ);	// negate TREQ
+	pmu_wait_for_ack();
+
+	switch (sPmuState) {
+		case PMU_SENDING:
+			if (sPmuLen < 0) {
+				sPmuLen = sPmuReqBytes - 1;			// length byte after command
+				pmu_send_byte((uint8)sPmuLen);
+				break;
+			}
+			if (sPmuIndex <= sPmuLen) {
+				pmu_send_byte(sPmuReq[sPmuIndex++]);
+				break;
+			}
+			if (sPmuReplyLen == 0) {
+				sPmuReqActive = false;
+				sPmuState = PMU_IDLE;
+				pmu_sr_off();
+			} else {
+				sPmuState = PMU_READING;			// read the command reply
+				sPmuIndex = 0;
+				sPmuLen = (sPmuReplyLen < 0) ? -1 : sPmuReplyLen;
+				sPmuReplyPtr = sPmuReply;
+				pmu_recv_byte();
+			}
+			break;
+
+		case PMU_INTACK:
+			sPmuIndex = 0;
+			sPmuLen = -1;
+			sPmuState = PMU_READING_INTR;
+			sPmuReplyPtr = sPmuIntr;
+			pmu_recv_byte();
+			break;
+
+		case PMU_READING:
+		case PMU_READING_INTR:
+			if (sPmuLen == -1) {
+				sPmuLen = bite;						// first byte = length
+				if (sPmuLen > 32)
+					sPmuLen = 32;
+			} else if (sPmuIndex < 32) {
+				sPmuReplyPtr[sPmuIndex++] = bite;
+			}
+			if (sPmuIndex < sPmuLen) {
+				pmu_recv_byte();
+				break;
+			}
+			if (sPmuState == PMU_READING_INTR)
+				pmu_handle_data(sPmuIntr, sPmuIndex);
+			else
+				sPmuReqActive = false;				// command reply consumed
+			sPmuState = PMU_IDLE;
+			pmu_sr_off();
+			break;
+
+		default:
+			break;
+	}
+}
+
+
+static int32
+adb_pmu_interrupt(void* arg)
+{
+	bool handled = false;
+	for (int guard = 0; guard < 1000; guard++) {
+		uint8 intr = via_read(VIA_IFR) & (VIA_SR_INT | VIA_CB1_INT);
+		if (intr == 0)
+			break;
+		via_write(VIA_IFR, intr);				// acknowledge
+		handled = true;
+		if ((intr & VIA_CB1_INT) != 0) {
+			sPmuCB1 = true;						// PMU has data to send us
+		}
+		if ((intr & VIA_SR_INT) != 0)
+			pmu_sr_intr();
+	}
+
+	// If the PMU signalled data (CB1) and the bus is idle, pull it by sending
+	// the interrupt-acknowledge command; the reply arrives via SR interrupts.
+	if (sPmuState == PMU_IDLE && sPmuCB1) {
+		sPmuCB1 = false;
+		sPmuState = PMU_INTACK;
+		pmu_wait_for_ack();
+		pmu_send_byte(PMU_INT_ACK);
+	} else if (sPmuState == PMU_IDLE && sPmuReqActive) {
+		pmu_start();
+	}
+
+	if (sPmuDidInput) {
+		sPmuDidInput = false;
+		return B_INVOKE_SCHEDULER;
+	}
+	return handled ? B_HANDLED_INTERRUPT : B_UNHANDLED_INTERRUPT;
+}
+
+
+static bool
+pmu_queue_wait(const uint8* data, int nbytes, int sendLen, int replyLen)
+{
+	for (int i = 0; i < nbytes && i < (int)sizeof(sPmuReq); i++)
+		sPmuReq[i] = data[i];
+	sPmuReqBytes = nbytes;
+	sPmuSendLen = sendLen;
+	sPmuReplyLen = replyLen;
+	sPmuReqActive = true;
+
+	cpu_status st = disable_interrupts();
+	pmu_start();
+	restore_interrupts(st);
+
+	for (int i = 0; i < 200000 && sPmuReqActive; i++)
+		spin(10);
+	return !sPmuReqActive;
+}
+
+
+// Wait for one shift-register byte to complete (polled), then clear the flag.
+static inline bool
+pmu_poll_sr(void)
+{
+	for (int i = 0; i < 8000; i++) {
+		if ((via_read(VIA_IFR) & VIA_SR_INT) != 0) {
+			via_write(VIA_IFR, VIA_SR_INT);
+			return true;
+		}
+		spin(2);
+	}
+	return false;
+}
+
+
+static inline void
+pmu_wait_tack_low(void)
+{
+	for (int i = 0; i < 8000 && (via_read(VIA_B) & PMU_TACK) != 0; i++)
+		spin(2);
+}
+
+
+// Read the PMU's pending interrupt/autopoll data SYNCHRONOUSLY (polled), with
+// the VIA SR interrupt masked so its handler can't steal bytes. Returns the
+// reply length in buf. Sending PMU_INT_ACK makes the PMU release extint-gpio1,
+// so the caller's level-triggered IRQ does not storm.
+static int
+pmu_read_pending(uint8* buf)
+{
+	via_write(VIA_IER, VIA_SR_INT);			// mask the VIA SR interrupt
+	int len = -1, idx = 0;
+	pmu_wait_for_ack();
+	pmu_send_byte(PMU_INT_ACK);
+	if (pmu_poll_sr()) {
+		pmu_wait_tack_low();
+		via_write(VIA_B, via_read(VIA_B) | PMU_TREQ);
+		pmu_wait_for_ack();
+		pmu_recv_byte();					// prime the first inbound byte
+		while (pmu_poll_sr()) {
+			pmu_wait_tack_low();
+			uint8 bite = via_read(VIA_SR);
+			via_write(VIA_B, via_read(VIA_B) | PMU_TREQ);
+			pmu_wait_for_ack();
+			if (len == -1) {
+				len = bite;
+				if (len > 32) len = 32;
+				if (len <= 0) break;
+			} else if (idx < 32)
+				buf[idx++] = bite;
+			if (len >= 0 && idx >= len)
+				break;
+			pmu_recv_byte();				// prime the next byte
+		}
+	}
+	pmu_sr_off();
+	via_write(VIA_IER, VIA_IER_SET | VIA_SR_INT);	// re-enable SR interrupt
+	return idx;
+}
+
+
+// Drain any interrupts the PMU already has queued (from firmware/boot) so normal
+// operation starts clean. Bounded.
+static void
+pmu_drain_pending(void)
+{
+	for (int i = 0; i < 32; i++) {
+		uint8 level = *(volatile uint8*)sGpioExt1;
+		asm volatile("eieio" ::: "memory");
+		if ((level & KEYLARGO_GPIO_LEVEL) != 0)
+			break;						// line negated: nothing pending
+		uint8 buf[32];
+		int idx = pmu_read_pending(buf);
+		if (idx <= 0)
+			break;
+		pmu_handle_data(buf, idx);
+	}
+}
+
+
+// extint-gpio1 (level, active low) => the PMU has data; read + dispatch it.
+static int32
+adb_gpio1_interrupt(void* arg)
+{
+	uint8 level = *(volatile uint8*)sGpioExt1;
+	asm volatile("eieio" ::: "memory");
+	if ((level & KEYLARGO_GPIO_LEVEL) != 0)
+		return B_UNHANDLED_INTERRUPT;		// line not asserted
+
+	uint8 buf[32];
+	int idx = pmu_read_pending(buf);
+	if (idx > 0) {
+		pmu_handle_data(buf, idx);
+		if (sPmuDidInput) {
+			sPmuDidInput = false;
+			return B_INVOKE_SCHEDULER;
+		}
+	}
+	return B_HANDLED_INTERRUPT;
+}
+
+
+static void
+pmu_init_via(void)
+{
+	via_write(VIA_B, via_read(VIA_B) | PMU_TREQ);			// TREQ idle (negated)
+	via_write(VIA_DIRB,
+		(via_read(VIA_DIRB) | PMU_TREQ) & ~PMU_TACK);		// TREQ out, TACK in
+	via_write(VIA_IER, 0x7f);								// disable all VIA ints
+	via_write(VIA_IFR, 0x7f);								// clear all flags
+}
+
+
+// Find the KeyLargo-family mac-io on PCI and return its BAR0 (physical base of
+// the mac-io register block) and size.
+static status_t
+pmu_find_macio_base(phys_addr_t* outBase, size_t* outSize)
+{
+	pci_module_info* pci = NULL;
+	if (get_module(B_PCI_MODULE_NAME, (module_info**)&pci) != B_OK)
+		return B_ERROR;
+
+	pci_info info;
+	status_t result = B_ENTRY_NOT_FOUND;
+	for (long i = 0; pci->get_nth_pci_info(i, &info) == B_OK; i++) {
+		if (info.vendor_id != PCI_VENDOR_APPLE)
+			continue;
+		// KeyLargo (0x0022), Pangea (0x0025), Intrepid (0x003e) = PMU-era.
+		if (info.device_id == 0x0022 || info.device_id == 0x0025
+				|| info.device_id == 0x003e) {
+			*outBase = info.u.h0.base_registers[0];
+			*outSize = info.u.h0.base_register_sizes[0];
+			result = B_OK;
+			break;
+		}
+	}
+	put_module(B_PCI_MODULE_NAME);
+	return result;
 }
 
 
@@ -463,17 +908,16 @@ init_hardware(void)
 	phys_addr_t configAddress = 0;
 	phys_addr_t configData = 0;
 	ppc_get_pci_host_bridge(&hostBridgeType, &configAddress, &configData);
-	if (hostBridgeType != 0) {
-		dprintf("adb: PCI host bridge type %" B_PRIu32 " is not Grackle; "
-			"ADB driver not attaching (mac-io is elsewhere)\n", hostBridgeType);
-		return B_ERROR;
-	}
+	// Grackle (dingusppc / old-world beige): input is ADB via VIA-CUDA at a
+	// fixed mac-io address. UniNorth (new-world, e.g. the PowerBook Pismo):
+	// input is ADB via the VIA-PMU on the KeyLargo mac-io (found on PCI).
+	sIsPMU = (hostBridgeType != 0);
 	return B_OK;
 }
 
 
-status_t
-init_driver(void)
+static status_t
+init_driver_cuda(void)
 {
 	void* virtualBase = NULL;
 	sRegisterArea = map_physical_memory("via-cuda registers",
@@ -512,11 +956,82 @@ init_driver(void)
 }
 
 
+static status_t
+init_driver_pmu(void)
+{
+	phys_addr_t physBase = 0;
+	size_t physSize = 0;
+	status_t status = pmu_find_macio_base(&physBase, &physSize);
+	if (status != B_OK) {
+		dprintf("adb: no KeyLargo mac-io found; VIA-PMU ADB not attaching\n");
+		return status;
+	}
+	if (physSize < PMU_VIA_OFFSET + 0x2000)
+		physSize = PMU_VIA_OFFSET + 0x2000;
+
+	void* virtualBase = NULL;
+	sRegisterArea = map_physical_memory("via-pmu registers", physBase, physSize,
+		B_ANY_KERNEL_ADDRESS | B_UNCACHED_MEMORY,
+		B_KERNEL_READ_AREA | B_KERNEL_WRITE_AREA, &virtualBase);
+	if (sRegisterArea < 0)
+		return sRegisterArea;
+	sVIABase = (addr_t)virtualBase + PMU_VIA_OFFSET;
+	sGpioExt1 = (addr_t)virtualBase + KEYLARGO_EXTINT_GPIO1;
+
+	sKeySem = create_sem(0, "adb keyboard");
+	sMouseSem = create_sem(0, "adb mouse");
+	if (sKeySem < 0 || sMouseSem < 0) {
+		delete_area(sRegisterArea);
+		sRegisterArea = -1;
+		return B_NO_MEMORY;
+	}
+
+	pmu_init_via();
+
+	// Install the handler BEFORE unmasking VIA interrupts.
+	install_io_interrupt_handler(PMU_IRQ, adb_pmu_interrupt, NULL, 0);
+	via_write(VIA_IER, VIA_IER_SET | VIA_SR_INT | VIA_CB1_INT);
+
+	// Follow Linux's KeyLargo PMU init so it enters a stable, OS-managed state
+	// KEY FINDING (lid-open power-off): the machine powers off on the first PMU
+	// command sent AFTER SYSTEM_READY (cmd df), whatever that command is - in
+	// every ordering. SYSTEM_READY returns a reply; we were not reading it, so
+	// the PMU kept trying to hand it back and the next command we transmitted
+	// collided with that pending reply and desynced the protocol -> power off.
+	// TEST: drop SYSTEM_READY entirely (we do not reconfigure autopoll either -
+	// PMU_ADB_CMD is also fatal lid-open - so we just read OpenFirmware's already
+	// running autopoll via the gpio1 handler).
+	bool pollOffOk = false, pollOk = false, readyOk = false;
+	// 1) drain the firmware-era autopoll backlog before we hook the handler,
+	pmu_drain_pending();
+	// 2) install the "PMU has data" handler (extint-gpio1) to read autopoll data,
+	install_io_interrupt_handler(PMU_GPIO1_IRQ, adb_gpio1_interrupt, NULL, 0);
+	// 3) ensure ADB (+ tick/environment) interrupts are delivered (mask last).
+	uint8 maskCmd[2] = { PMU_SET_INTR_MASK, PMU_INTR_MASK_VALUE };
+	bool maskOk = pmu_queue_wait(maskCmd, 2, 1, 0);
+
+	INFO("VIA-PMU up (mac-io %#" B_PRIxPHYSADDR " + %#x, irq %#x/gpio %#x), polloff=%d mask=%d ready=%d poll=%d\n",
+		physBase, PMU_VIA_OFFSET, PMU_IRQ, PMU_GPIO1_IRQ, pollOffOk, maskOk, readyOk, pollOk);
+	return B_OK;
+}
+
+
+status_t
+init_driver(void)
+{
+	return sIsPMU ? init_driver_pmu() : init_driver_cuda();
+}
+
+
 void
 uninit_driver(void)
 {
 	if (sRegisterArea >= 0) {
-		remove_io_interrupt_handler(VIA_CUDA_IRQ, adb_interrupt, NULL);
+		if (sIsPMU) {
+			remove_io_interrupt_handler(PMU_IRQ, adb_pmu_interrupt, NULL);
+			remove_io_interrupt_handler(PMU_GPIO1_IRQ, adb_gpio1_interrupt, NULL);
+		} else
+			remove_io_interrupt_handler(VIA_CUDA_IRQ, adb_interrupt, NULL);
 		delete_area(sRegisterArea);
 		sRegisterArea = -1;
 	}
