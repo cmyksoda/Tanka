@@ -2,9 +2,9 @@ name: Wii Bootloader CI
 
 on:
   push:
-    branches: [ "master", "main" ]
+    branches: [ "master", "main", "powerpc" ]
   pull_request:
-    branches: [ "master", "main" ]
+    branches: [ "master", "main", "powerpc" ]
 
 jobs:
   build:
