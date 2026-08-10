@@ -831,6 +831,8 @@ register_child_devices(void* cookie)
 		status = register_child_devices_pci(cookie);
 	else if (strcmp(bus, "acpi") == 0)
 		status = register_child_devices_acpi(cookie);
+	else if (strcmp(bus, "hollywood") == 0)
+		status = register_child_devices_wii(cookie);
 	else
 		status = B_BAD_VALUE;
 
@@ -860,6 +862,8 @@ init_device(device_node* node, void** device_cookie)
 
 	if (strcmp(bus, "pci") == 0)
 		return init_device_pci(node, context);
+	else if (strcmp(bus, "hollywood") == 0)
+		return B_OK; // handled by init_bus_wii
 
 	return B_OK;
 }
@@ -914,6 +918,8 @@ supports_device(device_node* parent)
 		return supports_device_pci(parent);
 	else if (strcmp(bus, "acpi") == 0)
 		return supports_device_acpi(parent);
+	else if (strcmp(bus, "hollywood") == 0)
+		return supports_device_wii(parent);
 
 	return 0.0f;
 }
@@ -1007,5 +1013,8 @@ module_info* modules[] = {
 	(module_info* )&sSDHCIDevice,
 	(module_info* )&gSDHCIPCIDeviceModule,
 	(module_info* )&gSDHCIACPIDeviceModule,
+#if defined(__powerpc__)
+	(module_info* )&gSDHCIWiiDeviceModule,
+#endif
 	NULL
 };
