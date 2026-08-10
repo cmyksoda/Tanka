@@ -1,0 +1,40 @@
+SubDir HAIKU_TOP src system boot platform wii ;
+
+UsePrivateHeaders [ FDirName graphics common ] ;
+UsePrivateHeaders interface ;
+
+{
+	local defines = _BOOT_PLATFORM_WII ;
+	defines = [ FDefines $(defines) ] ;
+	SubDirCcFlags $(defines) -I/opt/devkitpro/libogc/include ;
+	SubDirC++Flags $(defines) -fno-rtti -I/opt/devkitpro/libogc/include ;
+}
+
+# Ensure the linker finds libogc when producing the final ELF
+HAIKU_BOOT_wii_LDFLAGS += -L/opt/devkitpro/libogc/lib/wii ;
+HAIKU_BOOT_wii_LIBS = -logc -lfat ;
+
+local platform_src =
+	start.cpp
+;
+
+local kernel_src =
+;
+
+local platform ;
+for platform in [ MultiBootSubDirSetup wii ] {
+	on $(platform) {
+		BootMergeObject boot_platform_wii.o :
+
+			$(platform_src)
+			$(kernel_src)
+		:
+		:
+			boot_platform_generic_wii.a
+			boot_platform_wii_$(TARGET_ARCH).o
+		;
+
+		SEARCH on [ FGristFiles $(kernel_src) ]
+			= [ FDirName $(HAIKU_TOP) src system kernel platform wii ] ;
+	}
+}

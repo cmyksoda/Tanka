@@ -1,0 +1,48 @@
+name: Wii Bootloader CI
+
+on:
+  push:
+    branches: [ "master", "main" ]
+  pull_request:
+    branches: [ "master", "main" ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Install Haiku Dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y git nasm flex bison gawk \
+                                mtools xorriso zlib1g-dev \
+                                mkisofs python3 wget libzstd-dev \
+                                u-boot-tools xattr
+
+    - name: Install devkitPro (for libogc)
+      run: |
+        wget https://apt.devkitpro.org/install-devkitpro-pacman
+        chmod +x install-devkitpro-pacman
+        sudo expect -c 'spawn ./install-devkitpro-pacman; expect "Press Enter to continue..."; send "\r"; interact' || sudo ./install-devkitpro-pacman || true
+        sudo dkp-pacman -S --noconfirm wii-dev
+
+    - name: Download Buildtools
+      run: |
+        cd ..
+        git clone https://review.haiku-os.org/buildtools.git
+        cd buildtools/jam
+        make
+        sudo ./jam0 install
+
+    - name: Configure Haiku for PowerPC
+      run: |
+        mkdir -p generated.ppc
+        cd generated.ppc
+        ../configure --cross-tools-source ../../buildtools --build-cross-tools ppc
+
+    - name: Build Wii Bootloader
+      run: |
+        cd generated.ppc
+        jam -q '<wii>boot_platform_wii.o'
