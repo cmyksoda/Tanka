@@ -13,3 +13,9 @@ KernelAddon sdhci :
 	sdhci_acpi.cpp
 	sdhci_pci.cpp
 ;
+
+if $(TARGET_ARCH) = powerpc {
+	KernelAddon wii_sdhc :
+		wii_sdhc.cpp
+	;
+}

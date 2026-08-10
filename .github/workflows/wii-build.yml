@@ -46,3 +46,9 @@ jobs:
       run: |
         cd generated.ppc
         jam -q '<wii>boot_platform_wii.o'
+
+    - name: Build Wii SDHC Driver
+      run: |
+        cd generated.ppc
+        jam -q wii_sdhc
+
