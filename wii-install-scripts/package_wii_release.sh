@@ -15,7 +15,7 @@ fi
 
 BOOT_DOL="$1"
 HAIKU_IMG="$2"
-OUTPUT_DIR="wii_sd_card_release"
+OUTPUT_DIR="."
 
 if [ ! -f "$BOOT_DOL" ]; then
     echo "Error: Cannot find boot.dol at $BOOT_DOL"
@@ -27,7 +27,7 @@ if [ ! -f "$HAIKU_IMG" ]; then
     exit 1
 fi
 
-echo "Creating Wii SD Card structure in $OUTPUT_DIR..."
+echo "Creating Wii SD Card structure in project root..."
 
 # 1. Create Homebrew Channel App Directory
 mkdir -p "$OUTPUT_DIR/apps/HaikuPowerPCii"
@@ -60,10 +60,10 @@ echo "Pre-allocating 256MB swap file (swap.img)..."
 dd if=/dev/zero of="$OUTPUT_DIR/haiku/swap.img" bs=1M count=256 status=none
 
 echo ""
-echo "Done! Copy the contents of the '$OUTPUT_DIR' folder to the root of your FAT32 SD card."
+echo "Done! You can now zip the 'apps/' and 'haiku/' folders in the project root to distribute them."
 echo ""
 echo "Structure created:"
-echo "  sd:/apps/HaikuPowerPCii/boot.dol"
-echo "  sd:/apps/HaikuPowerPCii/meta.xml"
-echo "  sd:/haiku/haiku.img"
-echo "  sd:/haiku/swap.img"
+echo "  apps/HaikuPowerPCii/boot.dol"
+echo "  apps/HaikuPowerPCii/meta.xml"
+echo "  haiku/haiku.img"
+echo "  haiku/swap.img"
