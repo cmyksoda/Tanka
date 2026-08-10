@@ -168,20 +168,30 @@ WiimoteInputDevice::_PollLoop()
 				fLastButtons = mouseButtons;
 			}
 			
-			// Map D-Pad to mouse movement
-			float deltaX = 0;
-			float deltaY = 0;
-			if (buttons & WIIMOTE_BUTTON_LEFT) deltaX -= 5;
-			if (buttons & WIIMOTE_BUTTON_RIGHT) deltaX += 5;
-			if (buttons & WIIMOTE_BUTTON_UP) deltaY -= 5;
-			if (buttons & WIIMOTE_BUTTON_DOWN) deltaY += 5;
-
-			if (deltaX != 0 || deltaY != 0) {
-				BMessage* moveMsg = new BMessage(B_MOUSE_MOVED);
-				moveMsg->AddInt64("when", system_time());
-				moveMsg->AddFloat("delta_x", deltaX);
-				moveMsg->AddFloat("delta_y", deltaY);
-				EnqueueMessage(moveMsg);
+			// Parse IR data from Report 0x33
+			if (bytesRead >= 18 && buffer[0] == 0x33) {
+				uint8 b0 = buffer[6];
+				uint8 b1 = buffer[7];
+				uint8 b2 = buffer[8];
+				
+				if (b0 != 0xFF && b1 != 0xFF && b2 != 0xFF) {
+					uint16 irX = b0 | (((b2 >> 4) & 0x03) << 8);
+					uint16 irY = b1 | (((b2 >> 6) & 0x03) << 8);
+					
+					// Wii IR camera is 1024x768. 
+					// Since the camera is on the remote and the sensor bar is fixed, 
+					// moving the remote left moves the sensor bar right in the camera's view.
+					float xPos = (1023.0f - irX) / 1023.0f;
+					float yPos = irY / 767.0f; // Depending on bar position, this might need inversion
+					
+					BMessage* moveMsg = new BMessage(B_MOUSE_MOVED);
+					moveMsg->AddInt64("when", system_time());
+					moveMsg->AddFloat("x", xPos);
+					moveMsg->AddFloat("y", yPos);
+					// Add tablet subtype so app_server scales it absolutely
+					moveMsg->AddInt32("be:device_subtype", B_TABLET_POINTING_DEVICE);
+					EnqueueMessage(moveMsg);
+				}
 			}
 		}
 	}
