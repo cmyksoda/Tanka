@@ -14,7 +14,6 @@
 
 // libogc includes
 #include <gccore.h>
-#include <fat.h>
 #include <wiiuse/wpad.h>
 #include <wiikeyboard/keyboard.h>
 

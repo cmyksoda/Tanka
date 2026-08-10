@@ -4,7 +4,7 @@ UsePrivateHeaders [ FDirName graphics common ] ;
 UsePrivateHeaders interface ;
 
 {
-	local defines = _BOOT_PLATFORM_WII ;
+	local defines = _BOOT_PLATFORM_WII GEKKO HW_RVL ;
 	defines = [ FDefines $(defines) ] ;
 	SubDirCcFlags $(defines) -I/opt/devkitpro/libogc/include ;
 	SubDirC++Flags $(defines) -fno-rtti -I/opt/devkitpro/libogc/include ;
@@ -12,7 +12,7 @@ UsePrivateHeaders interface ;
 
 # Ensure the linker finds libogc and input libraries when producing the final ELF
 HAIKU_BOOT_wii_LDFLAGS += -L/opt/devkitpro/libogc/lib/wii ;
-HAIKU_BOOT_wii_LIBS = -lwiikeyboard -lwiiuse -lbte -logc -lfat ;
+HAIKU_BOOT_wii_LIBS = -lwiikeyboard -lwiiuse -lbte -logc ;
 
 local platform_src =
 	start.cpp

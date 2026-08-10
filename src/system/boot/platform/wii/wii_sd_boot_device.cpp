@@ -1,9 +1,6 @@
 /*
  * Copyright 2026, Haiku, Inc.
  * Distributed under the terms of the MIT License.
- *
- * Authors:
- *		Antigravity
  */
 
 #include <boot/vfs.h>
@@ -12,11 +9,14 @@
 #include <string.h>
 #include <stdio.h>
 
-#include <fat.h>
 #include <gccore.h>
+#include <sdcard/wiisd_io.h>
 
 // A virtual block device that exposes the haiku.img file 
-// residing on the physical Wii SD card's FAT32 partition.
+// residing on the physical Wii SD card.
+// For now, we just expose the RAW SD card! The user will have to 
+// write the anyboot image directly to the SD card, bypassing FAT32!
+// Later, we can add a FAT32 parser to find haiku.img.
 
 class WiiSDBootDevice : public Node {
 public:
@@ -29,48 +29,52 @@ public:
 	virtual off_t Size() const;
 
 private:
-	FILE* fImageFile;
+	bool fInitialized;
 	off_t fSize;
 };
 
 
 WiiSDBootDevice::WiiSDBootDevice()
 	:
-	fImageFile(NULL),
+	fInitialized(false),
 	fSize(0)
 {
-	fImageFile = fopen("sd:/haiku/haiku.img", "rb");
-	if (fImageFile != NULL) {
-		fseek(fImageFile, 0, SEEK_END);
-		fSize = ftell(fImageFile);
-		fseek(fImageFile, 0, SEEK_SET);
+	if (__io_wiisd.startup() && __io_wiisd.isInserted()) {
+		fInitialized = true;
+		// Arbitrary large size for raw SD card (e.g. 32GB)
+		fSize = 32ULL * 1024 * 1024 * 1024;
 	}
 }
 
 
 WiiSDBootDevice::~WiiSDBootDevice()
 {
-	if (fImageFile != NULL)
-		fclose(fImageFile);
+	if (fInitialized)
+		__io_wiisd.shutdown();
 }
 
 
 status_t
 WiiSDBootDevice::InitCheck()
 {
-	return fImageFile != NULL ? B_OK : B_ENTRY_NOT_FOUND;
+	return fInitialized ? B_OK : B_ENTRY_NOT_FOUND;
 }
 
 
 ssize_t
 WiiSDBootDevice::ReadAt(void *cookie, off_t pos, void *buffer, size_t bufferSize)
 {
-	if (fImageFile == NULL)
+	if (!fInitialized)
 		return B_NO_INIT;
 
-	fseek(fImageFile, pos, SEEK_SET);
-	size_t read = fread(buffer, 1, bufferSize, fImageFile);
-	return read;
+	// pos and bufferSize must be sector aligned (512 bytes)
+	sec_t startSector = pos / 512;
+	sec_t numSectors = bufferSize / 512;
+
+	if (__io_wiisd.readSectors(startSector, numSectors, buffer))
+		return bufferSize;
+
+	return B_IO_ERROR;
 }
 
 
@@ -100,7 +104,7 @@ platform_add_boot_device(struct stage2_args *args, NodeList *devicesList)
 		return B_NO_MEMORY;
 
 	if (device->InitCheck() != B_OK) {
-		printf("platform_add_boot_device: sd:/haiku/haiku.img not found!\n");
+		printf("platform_add_boot_device: SD card not found!\n");
 		delete device;
 		return B_ENTRY_NOT_FOUND;
 	}
@@ -112,6 +116,5 @@ platform_add_boot_device(struct stage2_args *args, NodeList *devicesList)
 status_t
 platform_add_block_devices(struct stage2_args *args, NodeList *devicesList)
 {
-	// Adding the FAT32 virtual image is handled above
 	return B_OK;
 }
