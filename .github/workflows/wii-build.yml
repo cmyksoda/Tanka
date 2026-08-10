@@ -32,6 +32,7 @@ jobs:
 
     - name: Configure Haiku for PowerPC
       run: |
+        git config --global --add safe.directory '*'
         mkdir -p /work
         mkdir -p generated.ppc
         cd generated.ppc
