@@ -20,6 +20,9 @@
 
 extern "C" void _start(void);
 extern "C" int main(stage2_args *args);
+
+extern uint8 __bss_start;
+extern uint8 _end;
 extern "C" status_t arch_start_kernel(struct kernel_args *kernelArgs,
 		addr_t kernelEntry, addr_t kernelStackTop);
 
@@ -78,6 +81,8 @@ platform_boot_options(void)
 extern "C" void
 _start(void)
 {
+	// clear BSS
+	memset(&__bss_start, 0, &_end - &__bss_start);
 	// Initialize Wii Video
 	VIDEO_Init();
 	rmode = VIDEO_GetPreferredMode(NULL);
