@@ -9,24 +9,18 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    container: devkitpro/devkitppc:latest
 
     steps:
     - uses: actions/checkout@v3
     
     - name: Install Haiku Dependencies
       run: |
-        sudo apt-get update
-        sudo apt-get install -y git nasm flex bison gawk \
+        apt-get update
+        apt-get install -y git nasm flex bison gawk \
                                 mtools xorriso zlib1g-dev \
                                 mkisofs python3 wget libzstd-dev \
-                                u-boot-tools xattr
-
-    - name: Install devkitPro (for libogc)
-      run: |
-        wget https://apt.devkitpro.org/install-devkitpro-pacman
-        chmod +x install-devkitpro-pacman
-        sudo expect -c 'spawn ./install-devkitpro-pacman; expect "Press Enter to continue..."; send "\r"; interact' || sudo ./install-devkitpro-pacman || true
-        sudo dkp-pacman -S --noconfirm wii-dev
+                                u-boot-tools xattr build-essential
 
     - name: Download Buildtools
       run: |
@@ -34,7 +28,7 @@ jobs:
         git clone https://review.haiku-os.org/buildtools.git
         cd buildtools/jam
         make
-        sudo ./jam0 install
+        ./jam0 install
 
     - name: Configure Haiku for PowerPC
       run: |
