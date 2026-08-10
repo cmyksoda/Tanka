@@ -99,4 +99,12 @@ extern "C" {
 	int setvbuf(FILE *file, char *buff, int mode, size_t size) {
 		return 0;
 	}
+
+	int __errno;
+	void* FindDevice(const char*) { return NULL; }
+	int AddDevice(void*) { return -1; }
+	int RemoveDevice(const char*) { return -1; }
+	const unsigned char _ctype_[257] = {0};
+	void* __Arena1Lo;
+	void build_argv() {}
 }
