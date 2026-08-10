@@ -107,6 +107,15 @@ _start(void)
 	stage2_args args;
 	memset(&args, 0, sizeof(stage2_args));
 
+	// Populate kernel_args with framebuffer details for app_server
+	gKernelArgs.frame_buffer.enabled = true;
+	gKernelArgs.frame_buffer.physical_buffer.start = (addr_t)MEM_VIRTUAL_TO_PHYSICAL(xfb);
+	gKernelArgs.frame_buffer.physical_buffer.size = rmode->fbWidth * rmode->xfbHeight * VI_DISPLAY_PIX_SZ;
+	gKernelArgs.frame_buffer.width = rmode->fbWidth;
+	gKernelArgs.frame_buffer.height = rmode->xfbHeight;
+	gKernelArgs.frame_buffer.depth = VI_DISPLAY_PIX_SZ * 8; // Usually 16-bit YUYV on Wii
+	gKernelArgs.frame_buffer.bytes_per_row = rmode->fbWidth * VI_DISPLAY_PIX_SZ;
+
 	// TODO: init heap, Haiku console, mmu, etc.
 
 	main(&args);
