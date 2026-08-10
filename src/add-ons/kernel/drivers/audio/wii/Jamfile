@@ -1,0 +1,10 @@
+SubDir HAIKU_TOP src add-ons kernel drivers audio wii ;
+
+UsePrivateHeaders audio ;
+
+KernelAddon wii_audio :
+	driver.c
+	wii_hardware.c
+	wii_multi.c
+;
+

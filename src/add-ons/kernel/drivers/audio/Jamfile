@@ -12,3 +12,4 @@ SubInclude HAIKU_TOP src add-ons kernel drivers audio sb16 ;
 SubInclude HAIKU_TOP src add-ons kernel drivers audio usb ;
 SubInclude HAIKU_TOP src add-ons kernel drivers audio virtio ;
 
+SubInclude HAIKU_TOP src add-ons kernel drivers audio wii ;
