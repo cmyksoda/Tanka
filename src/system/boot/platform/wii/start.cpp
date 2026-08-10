@@ -107,14 +107,26 @@ _start(void)
 	stage2_args args;
 	memset(&args, 0, sizeof(stage2_args));
 
-	// Populate kernel_args with framebuffer details for app_server
+	// We must allocate a 32-bit RGB framebuffer for app_server to draw into,
+	// because the Wii VI only accepts YUYV (16-bit). We'll do software conversion
+	// in the kernel graphics driver from this fake buffer to the real one.
+	void* fake_rgb_fb = memalign(32, rmode->fbWidth * rmode->xfbHeight * 4);
+	memset(fake_rgb_fb, 0, rmode->fbWidth * rmode->xfbHeight * 4);
+
+	// Populate kernel_args with fake RGB32 framebuffer details for app_server
 	gKernelArgs.frame_buffer.enabled = true;
-	gKernelArgs.frame_buffer.physical_buffer.start = (addr_t)MEM_VIRTUAL_TO_PHYSICAL(xfb);
-	gKernelArgs.frame_buffer.physical_buffer.size = rmode->fbWidth * rmode->xfbHeight * VI_DISPLAY_PIX_SZ;
+	gKernelArgs.frame_buffer.physical_buffer.start = (addr_t)MEM_VIRTUAL_TO_PHYSICAL(fake_rgb_fb);
+	gKernelArgs.frame_buffer.physical_buffer.size = rmode->fbWidth * rmode->xfbHeight * 4;
 	gKernelArgs.frame_buffer.width = rmode->fbWidth;
 	gKernelArgs.frame_buffer.height = rmode->xfbHeight;
-	gKernelArgs.frame_buffer.depth = VI_DISPLAY_PIX_SZ * 8; // Usually 16-bit YUYV on Wii
-	gKernelArgs.frame_buffer.bytes_per_row = rmode->fbWidth * VI_DISPLAY_PIX_SZ;
+	gKernelArgs.frame_buffer.depth = 32; // RGB32
+	gKernelArgs.frame_buffer.bytes_per_row = rmode->fbWidth * 4;
+
+	// Stash the real hardware YUYV framebuffer
+	gKernelArgs.arch_args.wii_hardware_framebuffer.start = (addr_t)MEM_VIRTUAL_TO_PHYSICAL(xfb);
+	gKernelArgs.arch_args.wii_hardware_framebuffer.size = rmode->fbWidth * rmode->xfbHeight * VI_DISPLAY_PIX_SZ;
+
+	gKernelArgs.arch_args.platform = 2; // PPC_PLATFORM_WII
 
 	// TODO: init heap, Haiku console, mmu, etc.
 

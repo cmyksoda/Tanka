@@ -24,6 +24,7 @@ typedef struct {
 	addr_range	page_table;		// virtual address and size of the page table
 	addr_range	exception_handlers;
 	addr_range	framebuffer;		// maps where the framebuffer is located, in physical memory
+	addr_range	wii_hardware_framebuffer; // Real hardware framebuffer (YUYV) on Wii, while 'framebuffer' is a fake RGB32 one
 	int 		screen_x, screen_y, screen_depth;
 
 	// The virtual ranges we want to keep in the kernel. E.g. those belonging

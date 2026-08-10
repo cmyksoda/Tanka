@@ -355,10 +355,217 @@ PPCUBoot::ShutDown(bool reboot)
 }
 
 
+// #pragma mark - Wii
+
+namespace BPrivate {
+
+class PPCWii : public PPCPlatform {
+public:
+	PPCWii();
+	virtual ~PPCWii();
+
+	virtual status_t Init(struct kernel_args *kernelArgs);
+	virtual status_t InitSerialDebug(struct kernel_args *kernelArgs);
+	virtual status_t InitPostVM(struct kernel_args *kernelArgs);
+	virtual status_t InitRTC(struct kernel_args *kernelArgs,
+		struct real_time_data *data);
+
+	virtual char SerialDebugGetChar();
+	virtual void SerialDebugPutChar(char c);
+
+	virtual void SetHardwareRTC(uint64 seconds);
+	virtual uint64 GetHardwareRTC();
+
+	virtual void ShutDown(bool reboot);
+
+private:
+	static int32 VideoThread(void* arg);
+	
+	area_id fFakeFrameBufferArea;
+	area_id fRealFrameBufferArea;
+	void* fFakeFrameBuffer;
+	void* fRealFrameBuffer;
+	int fFrameBufferWidth;
+	int fFrameBufferHeight;
+};
+
+}	// namespace BPrivate
+
+
+PPCWii::PPCWii()
+	:
+	PPCPlatform(PPC_PLATFORM_WII),
+	fFakeFrameBufferArea(-1),
+	fRealFrameBufferArea(-1),
+	fFakeFrameBuffer(NULL),
+	fRealFrameBuffer(NULL),
+	fFrameBufferWidth(0),
+	fFrameBufferHeight(0)
+{
+}
+
+
+PPCWii::~PPCWii()
+{
+}
+
+
+status_t
+PPCWii::Init(struct kernel_args *kernelArgs)
+{
+	return B_OK;
+}
+
+
+status_t
+PPCWii::InitSerialDebug(struct kernel_args *kernelArgs)
+{
+	return B_OK;
+}
+
+
+status_t
+PPCWii::InitPostVM(struct kernel_args *kernelArgs)
+{
+	// Map the fake RGB32 framebuffer (which app_server draws to)
+	fFrameBufferWidth = kernelArgs->frame_buffer.width;
+	fFrameBufferHeight = kernelArgs->frame_buffer.height;
+	size_t fakeSize = fFrameBufferWidth * fFrameBufferHeight * 4;
+	
+	fFakeFrameBufferArea = map_physical_memory("wii fake rgb framebuffer",
+		kernelArgs->frame_buffer.physical_buffer.start, fakeSize,
+		B_ANY_KERNEL_ADDRESS, B_KERNEL_READ_AREA | B_KERNEL_WRITE_AREA, &fFakeFrameBuffer);
+		
+	if (fFakeFrameBufferArea < 0) {
+		dprintf("PPCWii: Failed to map fake framebuffer\n");
+		return B_ERROR;
+	}
+
+	// Map the real hardware YUYV framebuffer
+	size_t realSize = kernelArgs->arch_args.wii_hardware_framebuffer.size;
+	fRealFrameBufferArea = map_physical_memory("wii real yuyv framebuffer",
+		kernelArgs->arch_args.wii_hardware_framebuffer.start, realSize,
+		B_ANY_KERNEL_ADDRESS, B_KERNEL_READ_AREA | B_KERNEL_WRITE_AREA, &fRealFrameBuffer);
+		
+	if (fRealFrameBufferArea < 0) {
+		dprintf("PPCWii: Failed to map real framebuffer\n");
+		return B_ERROR;
+	}
+
+	// Spawn the 60Hz conversion thread
+	thread_id thread = spawn_kernel_thread(VideoThread, "wii video conversion",
+		B_DISPLAY_PRIORITY, this);
+	if (thread >= 0)
+		resume_thread(thread);
+
+	return B_OK;
+}
+
+
+int32
+PPCWii::VideoThread(void* arg)
+{
+	PPCWii* self = (PPCWii*)arg;
+	
+	while (true) {
+		// Wait ~16ms (60 FPS)
+		snooze(16666);
+		
+		uint8* src = (uint8*)self->fFakeFrameBuffer;
+		uint8* dst = (uint8*)self->fRealFrameBuffer;
+		
+		int pixels = self->fFrameBufferWidth * self->fFrameBufferHeight;
+		
+		// Convert RGB32 to YUYV (YUV422)
+		// Haiku B_RGB32 is usually B G R A in memory (little endian) or A R G B (big endian)
+		// On PowerPC, B_RGB32 is stored as A R G B (alpha byte at offset 0).
+		for (int i = 0; i < pixels; i += 2) {
+			uint8 r0 = src[i*4 + 1];
+			uint8 g0 = src[i*4 + 2];
+			uint8 b0 = src[i*4 + 3];
+			
+			uint8 r1 = src[(i+1)*4 + 1];
+			uint8 g1 = src[(i+1)*4 + 2];
+			uint8 b1 = src[(i+1)*4 + 3];
+			
+			// Approximation formulas:
+			// Y = (77*R + 150*G + 29*B) >> 8
+			// U = ((-43*R - 85*G + 128*B) >> 8) + 128
+			// V = ((128*R - 107*G - 21*B) >> 8) + 128
+			
+			int y0 = (77 * r0 + 150 * g0 + 29 * b0) >> 8;
+			int y1 = (77 * r1 + 150 * g1 + 29 * b1) >> 8;
+			
+			// Average R, G, B for U and V
+			int r_avg = (r0 + r1) / 2;
+			int g_avg = (g0 + g1) / 2;
+			int b_avg = (b0 + b1) / 2;
+			
+			int u = ((-43 * r_avg - 85 * g_avg + 128 * b_avg) >> 8) + 128;
+			int v = ((128 * r_avg - 107 * g_avg - 21 * b_avg) >> 8) + 128;
+			
+			// Clamp values
+			if (y0 > 255) y0 = 255; if (y0 < 0) y0 = 0;
+			if (y1 > 255) y1 = 255; if (y1 < 0) y1 = 0;
+			if (u > 255) u = 255; if (u < 0) u = 0;
+			if (v > 255) v = 255; if (v < 0) v = 0;
+			
+			// YUYV format: Y0 U0 Y1 V0
+			dst[i*2 + 0] = y0;
+			dst[i*2 + 1] = u;
+			dst[i*2 + 2] = y1;
+			dst[i*2 + 3] = v;
+		}
+	}
+	
+	return 0;
+}
+
+
+status_t
+PPCWii::InitRTC(struct kernel_args *kernelArgs,
+	struct real_time_data *data)
+{
+	return B_OK;
+}
+
+
+char
+PPCWii::SerialDebugGetChar()
+{
+	return 0;
+}
+
+
+void
+PPCWii::SerialDebugPutChar(char c)
+{
+}
+
+
+void
+PPCWii::SetHardwareRTC(uint64 seconds)
+{
+}
+
+
+uint64
+PPCWii::GetHardwareRTC()
+{
+	return 0;
+}
+
+
+void
+PPCWii::ShutDown(bool reboot)
+{
+}
+
+
 // # pragma mark -
 
 
-#define PLATFORM_BUFFER_SIZE MAX(sizeof(PPCOpenFirmware),sizeof(PPCUBoot))
+#define PLATFORM_BUFFER_SIZE MAX(MAX(sizeof(PPCOpenFirmware),sizeof(PPCUBoot)),sizeof(PPCWii))
 // static buffer for constructing the actual PPCPlatform
 static char *sPPCPlatformBuffer[PLATFORM_BUFFER_SIZE];
 
@@ -435,6 +642,9 @@ arch_platform_init(struct kernel_args *kernelArgs)
 			break;
 		case PPC_PLATFORM_U_BOOT:
 			sPPCPlatform = new(sPPCPlatformBuffer) PPCUBoot;
+			break;
+		case PPC_PLATFORM_WII:
+			sPPCPlatform = new(sPPCPlatformBuffer) PPCWii;
 			break;
 		default:
 			return B_ERROR;
