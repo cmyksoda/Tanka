@@ -40,12 +40,12 @@ jobs:
     - name: Build Wii Bootloader
       run: |
         cd generated.ppc
-        jam -q '<wii>boot_platform_wii.o'
+        jam -q haiku_loader.wii
 
-    - name: Build Wii SDHC Driver
+    - name: Build Drivers
       run: |
         cd generated.ppc
-        jam -q wii_sdhc
+        jam -q sdhci wii_audio
 
     - name: Build 4GB Haiku Root Image
       run: |
