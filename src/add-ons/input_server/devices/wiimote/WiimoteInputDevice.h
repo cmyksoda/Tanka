@@ -25,7 +25,13 @@ public:
 								uint32 command, BMessage* message);
 
 private:
-	// TODO: Add bluetooth pairing, polling thread, and HID translation
+	static int32			_ThreadEntry(void* arg);
+	void					_PollLoop();
+
+	thread_id				fThread;
+	volatile bool			fActive;
+	int						fDeviceFd;
+	uint32					fLastButtons;
 };
 
 extern "C" BInputServerDevice* instantiate_input_device();
