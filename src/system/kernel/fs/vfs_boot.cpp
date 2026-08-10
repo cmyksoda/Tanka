@@ -376,6 +376,46 @@ get_boot_partitions(KMessage& bootVolume, PartitionStack& partitions)
 	}
 #endif
 
+	// Loopback Boot Discovery: Look for haiku.img on FAT partitions
+	struct FatImageVisitor : KPartitionVisitor {
+		FatImageVisitor(KDiskDeviceManager* manager) : fManager(manager) {}
+		virtual bool VisitPre(KPartition *partition) {
+			if (partition->ContentType() != NULL
+				&& (strcmp(partition->ContentType(), kPartitionTypeFAT32) == 0
+				 || strcmp(partition->ContentType(), kPartitionTypeFAT16) == 0)) {
+				KPath path;
+				if (partition->GetPath(&path) == B_OK) {
+					_kern_create_dir(-1, "/boot/fat", 0755);
+					dev_t fatDev = _kern_mount("/boot/fat", path.Path(), "fat", 0, NULL, 0);
+					if (fatDev >= 0) {
+						struct stat st;
+						if (lstat("/boot/fat/haiku/haiku.img", &st) == 0) {
+							dprintf("Found loopback haiku.img on FAT partition %s\n", path.Path());
+							if (fManager->CreateFileDevice("/boot/fat/haiku/haiku.img") >= 0) {
+								dprintf("Successfully created file device for haiku.img\n");
+								// Rescan to discover BFS inside the file device
+								fManager->InitialDeviceScan();
+							}
+						} else {
+							_kern_unmount("/boot/fat", 0);
+						}
+					}
+				}
+			}
+			return false; // keep visiting
+		}
+	private:
+		KDiskDeviceManager* fManager;
+	} fatVisitor(manager);
+
+	{
+		int32 cookie = 0;
+		KDiskDevice *device;
+		while ((device = manager->NextDevice(&cookie)) != NULL) {
+			device->VisitEachDescendant(&fatVisitor);
+		}
+	}
+
 	struct BootPartitionVisitor : KPartitionVisitor {
 		BootPartitionVisitor(BootMethod* bootMethod, PartitionStack &stack)
 			: fPartitions(stack),
