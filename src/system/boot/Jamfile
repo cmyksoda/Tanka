@@ -462,11 +462,6 @@ for platform in [ MultiBootSubDirSetup ] {
 			case next_m68k :
 				BuildAoutLoader haiku_loader.$(TARGET_BOOT_PLATFORM) : <revisioned>boot_loader_$(TARGET_BOOT_PLATFORM) ;
 
-			case wii :
-				# The boot_loader_wii ELF is converted to .dol in the CI script.
-				# No haiku_loader binary needed here.
-
-
 			case * :
 				Exit "Currently unsupported haiku_loader:" $(TARGET_BOOT_PLATFORM) ;
 		}
