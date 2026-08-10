@@ -87,3 +87,16 @@ platform_load_ucode(BootVolume &volume)
 {
 }
 
+extern "C" {
+	float sqrtf(float x) { return 0.0f; }
+	float atan2f(float y, float x) { return 0.0f; }
+	void sincosf(float x, float *s, float *c) { *s = 0.0f; *c = 1.0f; }
+	float atanf(float x) { return 0.0f; }
+
+	void* __sf[3];
+	void* devoptab_list[8];
+
+	int setvbuf(FILE *file, char *buff, int mode, size_t size) {
+		return 0;
+	}
+}

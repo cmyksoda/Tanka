@@ -11,8 +11,15 @@ SECTIONS
 
 	/* text/read-only data */
 	.text :	{ *(.text .text.* .gnu.linkonce.t.*)
-	          *(.rodata .rodata.* .gnu.linkonce.r.*)
-	          *(.sdata2) }
+	          *(.rodata .rodata.* .gnu.linkonce.r.*) }
+
+	.sdata2 : {
+		*(.sdata2 .sdata2.* .gnu.linkonce.s2.*)
+	}
+
+	.sbss2 : {
+		*(.sbss2 .sbss2.* .gnu.linkonce.sb2.*)
+	}
 
 	/* writable data  */
 	/* align to the same offset in the next page (for performance reasons
