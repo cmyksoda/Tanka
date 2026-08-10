@@ -91,20 +91,7 @@ extern "C" void panic(const char* format, ...) {
 extern "C" void dprintf(const char* format, ...) {
 }
 
-extern "C" status_t boot_arch_mmu_init(void) {
-	return B_OK;
-}
-
-extern "C" void boot_arch_mmu_allocate_kernel_page_tables(void) {
-}
-
-extern "C" addr_t boot_arch_mmu_get_kernel_page_tables_start(void) {
-	return 0;
-}
-
-extern "C" size_t boot_arch_mmu_get_kernel_page_tables_size(void) {
-	return 0;
-}
+// MMU functions moved to mmu.cpp
 
 extern "C" status_t boot_arch_cpu_init(void) {
 	return B_OK;

@@ -17,6 +17,7 @@ HAIKU_BOOT_wii_LIBS = -logc -lfat ;
 local platform_src =
 	start.cpp
 	wii_sd_boot_device.cpp
+	mmu.cpp
 ;
 
 local kernel_src =
