@@ -410,6 +410,7 @@ for platform in [ MultiBootSubDirSetup ] {
 
 			: $(HAIKU_TOP)/src/system/ldscripts/$(TARGET_ARCH)/boot_loader_$(platform:G=).ld
 			: $(ldflags)
+			: $(HAIKU_BOOT_$(platform:G=:U)_LIBS)
 		;
 
 		MakeLocate <revisioned>boot_loader_$(TARGET_BOOT_PLATFORM) : [ FDirName $(TARGET_DEBUG_$(DEBUG)_LOCATE_TARGET) revisioned ] ;

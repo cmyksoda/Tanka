@@ -12,7 +12,7 @@ UsePrivateHeaders interface ;
 
 # Ensure the linker finds libogc and input libraries when producing the final ELF
 HAIKU_BOOT_WII_LDFLAGS += -L/opt/devkitpro/libogc/lib/wii ;
-HAIKU_BOOT_WII_LIBS = /opt/devkitpro/libogc/lib/wii/libwiikeyboard.a /opt/devkitpro/libogc/lib/wii/libwiiuse.a /opt/devkitpro/libogc/lib/wii/libbte.a /opt/devkitpro/libogc/lib/wii/libogc.a ;
+HAIKU_BOOT_WII_LIBS = /opt/devkitpro/libogc/lib/wii/libwiikeyboard.a /opt/devkitpro/libogc/lib/wii/libwiiuse.a /opt/devkitpro/libogc/lib/wii/libbte.a /opt/devkitpro/libogc/lib/wii/libfat.a /opt/devkitpro/libogc/lib/wii/libogc.a /opt/devkitpro/devkitPPC/lib/gcc/powerpc-eabi/16.1.0/libgcc.a ;
 
 local platform_src =
 	start.cpp

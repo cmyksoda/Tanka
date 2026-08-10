@@ -120,7 +120,7 @@ rule BootObjects
 
 rule BootLd
 {
-	# BootLd <name> : <objs> : <linkerscript> : <args> ;
+	# BootLd <name> : <objs> : <linkerscript> : <args> : <extra_libs> ;
 
 	LINK on $(1) = $(TARGET_LD_$(TARGET_KERNEL_ARCH)) ;
 
@@ -134,7 +134,7 @@ rule BootLd
 		libs += [ TargetBootLibsupc++ true ] ;
 		Depends $(1) : [ TargetBootLibsupc++ ] ;
 	}
-	LINKLIBS on $(1) = $(libs) [ TargetBootLibgcc $(TARGET_KERNEL_ARCH) : true ] $(HAIKU_BOOT_$(TARGET_BOOT_PLATFORM:U)_LIBS) ;
+	LINKLIBS on $(1) = $(libs) [ TargetBootLibgcc $(TARGET_KERNEL_ARCH) : true ] $(5) ;
 	Depends $(1) : [ TargetBootLibgcc $(TARGET_KERNEL_ARCH) ] ;
 
 	# TODO: Do we really want to invoke SetupBoot here? The objects should
