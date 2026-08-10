@@ -6,8 +6,8 @@ UsePrivateHeaders interface ;
 {
 	local defines = _BOOT_PLATFORM_WII GEKKO HW_RVL ;
 	defines = [ FDefines $(defines) ] ;
-	SubDirCcFlags $(defines) -I/opt/devkitpro/libogc/include ;
-	SubDirC++Flags $(defines) -fno-rtti -I/opt/devkitpro/libogc/include ;
+	SubDirCcFlags $(defines) -idirafter /opt/devkitpro/libogc/include ;
+	SubDirC++Flags $(defines) -fno-rtti -idirafter /opt/devkitpro/libogc/include ;
 }
 
 # Ensure the linker finds libogc and input libraries when producing the final ELF

@@ -14,6 +14,7 @@
 
 // libogc includes
 #include <gccore.h>
+#include <ogc/machine/processor.h>
 #include <wiiuse/wpad.h>
 #include <wiikeyboard/keyboard.h>
 
@@ -53,7 +54,8 @@ platform_start_kernel(void)
 
 	// On the Wii, libogc has interrupts enabled. 
 	// The kernel expects them to be disabled before handoff.
-	_CPU_ISR_Disable();
+	uint32_t _isr_cookie;
+	_CPU_ISR_Disable(_isr_cookie);
 
 	status_t error = arch_start_kernel(&gKernelArgs, kernelEntry, stackTop);
 
