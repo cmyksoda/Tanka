@@ -19,6 +19,7 @@ local platform_src =
 	arch_start_kernel.S
 	wii_sd_boot_device.cpp
 	mmu.cpp
+	console.cpp
 ;
 
 local kernel_src =

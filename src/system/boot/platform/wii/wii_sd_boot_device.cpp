@@ -118,3 +118,39 @@ platform_add_block_devices(struct stage2_args *args, NodeList *devicesList)
 {
 	return B_OK;
 }
+
+status_t 
+platform_register_boot_device(Node *device)
+{
+	disk_identifier disk;
+	memset(&disk, 0, sizeof(disk_identifier));
+
+	disk.bus_type = UNKNOWN_BUS;
+	disk.device_type = UNKNOWN_DEVICE;
+	disk.device.unknown.size = device->Size();
+
+	for (int32 i = 0; i < NUM_DISK_CHECK_SUMS; i++) {
+		disk.device.unknown.check_sums[i].offset = -1;
+		disk.device.unknown.check_sums[i].sum = 0;
+	}
+
+	gBootParams.SetData(BOOT_VOLUME_DISK_IDENTIFIER, B_RAW_TYPE, &disk,
+		sizeof(disk_identifier));
+
+	return B_OK;
+}
+
+status_t
+platform_get_boot_partitions(struct stage2_args *args, Node *device,
+	NodeList *list, NodeList *partitionList)
+{
+	NodeIterator iterator = list->GetIterator();
+	boot::Partition *partition = NULL;
+	status_t status = B_ENTRY_NOT_FOUND;
+	while ((partition = (boot::Partition *)iterator.Next()) != NULL) {
+		partitionList->Insert(partition);
+		status = B_OK;
+	}
+
+	return status;
+}

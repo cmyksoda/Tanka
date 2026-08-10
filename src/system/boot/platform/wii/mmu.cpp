@@ -133,6 +133,19 @@ platform_allocate_region(void **_address, size_t size, uint8 protection)
 }
 
 
+extern "C" ssize_t
+platform_allocate_heap_region(size_t size, void **_base)
+{
+	*_base = NULL;
+	status_t error = platform_allocate_region(_base, size,
+		B_READ_AREA | B_WRITE_AREA);
+	if (error != B_OK)
+		return error;
+
+	return size;
+}
+
+
 extern "C" status_t
 platform_bootloader_address_to_kernel_address(void *address, addr_t *_result)
 {
