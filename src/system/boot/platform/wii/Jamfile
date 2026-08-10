@@ -10,9 +10,9 @@ UsePrivateHeaders interface ;
 	SubDirC++Flags $(defines) -fno-rtti -I/opt/devkitpro/libogc/include ;
 }
 
-# Ensure the linker finds libogc when producing the final ELF
+# Ensure the linker finds libogc and input libraries when producing the final ELF
 HAIKU_BOOT_wii_LDFLAGS += -L/opt/devkitpro/libogc/lib/wii ;
-HAIKU_BOOT_wii_LIBS = -logc -lfat ;
+HAIKU_BOOT_wii_LIBS = -lwiikeyboard -lwiiuse -lbte -logc -lfat ;
 
 local platform_src =
 	start.cpp

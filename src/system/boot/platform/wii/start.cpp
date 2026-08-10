@@ -15,6 +15,8 @@
 // libogc includes
 #include <gccore.h>
 #include <fat.h>
+#include <wiiuse/wpad.h>
+#include <wiikeyboard/keyboard.h>
 
 extern "C" void _start(void);
 extern "C" int main(stage2_args *args);
@@ -58,6 +60,14 @@ _start(void)
 
 	printf("\nHaiku Bootloader for Nintendo Wii\n");
 
+	// Initialize Inputs
+	WPAD_Init();
+	if (KEYBOARD_Init(NULL) == 0) {
+		printf("USB Keyboard initialized.\n");
+	} else {
+		printf("USB Keyboard failed to initialize.\n");
+	}
+
 	// Initialize FAT
 	if (!fatInitDefault()) {
 		printf("fatInitDefault failed! SD card not found.\n");
@@ -81,7 +91,37 @@ extern "C" void console_set_cursor(int32 x, int32 y) {}
 extern "C" void console_show_cursor(void) {}
 extern "C" void console_hide_cursor(void) {}
 extern "C" void console_set_color(int32 foreground, int32 background) {}
-extern "C" int console_wait_for_key(void) { return 0; }
+extern "C" int console_wait_for_key(void) {
+	while (true) {
+		// Poll Wii Remote
+		WPAD_ScanPads();
+		u32 pressed = WPAD_ButtonsDown(0);
+		if (pressed & WPAD_BUTTON_UP) return 38; // Up arrow
+		if (pressed & WPAD_BUTTON_DOWN) return 40; // Down arrow
+		if (pressed & WPAD_BUTTON_A) return '\n'; // Enter
+		if (pressed & WPAD_BUTTON_B) return 27; // Esc
+
+		// Poll USB Keyboard
+		keyboard_event ke;
+		if (KEYBOARD_GetEvent(&ke)) {
+			if (ke.type == KEYBOARD_PRESSED) {
+				// We map basic ones or just return the character.
+				// Since Haiku's boot menu mostly uses Up/Down/Enter/Esc:
+				if (ke.keycode == 104) return 38; // Up
+				if (ke.keycode == 105) return 40; // Down
+				if (ke.keycode == 28) return '\n'; // Enter
+				if (ke.keycode == 1) return 27; // Esc
+				
+				if (ke.symbol > 0 && ke.symbol < 128) {
+					return ke.symbol;
+				}
+			}
+		}
+		
+		VIDEO_WaitVSync();
+	}
+	return 0;
+}
 extern "C" void console_put_char(char c) {}
 
 extern "C" void panic(const char* format, ...) {
