@@ -39,10 +39,21 @@ jobs:
     - name: Build Wii Bootloader
       run: |
         cd generated.ppc
-        jam -q '<wii>boot_platform_wii.o'
+        jam -q boot_loader_wii
+        elf2dol objects/haiku/powerpc/release/system/boot/boot_loader_wii boot.dol
 
-    - name: Build Wii SDHC Driver
+    - name: Build Haiku Root Image
       run: |
         cd generated.ppc
-        jam -q wii_sdhc
+        jam -q @image
+
+    - name: Package Wii Release
+      run: |
+        ./wii-install-scripts/package_wii_release.sh generated.ppc/boot.dol generated.ppc/haiku.img
+
+    - name: Upload Wii Release Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: haiku-wii-release
+        path: wii_sd_card_release/
 
