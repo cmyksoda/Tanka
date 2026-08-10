@@ -63,7 +63,8 @@ init_bus(device_node* node, void** bus_cookie)
 	if (gUSB->get_stack((void**)&stack) != B_OK)
 		return B_ERROR;
 
-	OHCI *ohci = new(std::nothrow) OHCI(&bus->pciinfo, bus->pci, bus->device, stack, node);
+	uint32 offset = bus->pci->read_pci_config(bus->device, PCI_base_registers, 4) & PCI_address_memory_32_mask;
+	OHCI *ohci = new(std::nothrow) OHCI(offset, B_PAGE_SIZE, bus->pciinfo.u.h0.interrupt_line, &bus->pciinfo, bus->pci, bus->device, stack, node);
 	if (ohci == NULL) {
 		return B_NO_MEMORY;
 	}
@@ -254,9 +255,16 @@ static driver_module_info sOHCIDevice = {
 	NULL, // device removed
 };
 
+extern usb_bus_interface gOHCIWiiDeviceModule;
+extern driver_module_info sOHCIWiiDevice;
+
 module_info* modules[] = {
 	(module_info* )&sOHCIDevice,
 	(module_info* )&gOHCIPCIDeviceModule,
+#if defined(__powerpc__)
+	(module_info* )&sOHCIWiiDevice,
+	(module_info* )&gOHCIWiiDeviceModule,
+#endif
 	NULL
 };
 
@@ -266,7 +274,8 @@ module_info* modules[] = {
 //
 
 
-OHCI::OHCI(pci_info *info, pci_device_module_info* pci, pci_device* device, Stack *stack,
+OHCI::OHCI(phys_addr_t registersBase, size_t registersSize, uint32 irq,
+	pci_info *info, pci_device_module_info* pci, pci_device* device, Stack *stack,
 	device_node* node)
 	:	BusManager(stack, node),
 		fPCIInfo(info),
@@ -306,19 +315,18 @@ OHCI::OHCI(pci_info *info, pci_device_module_info* pci, pci_device* device, Stac
 
 	mutex_init(&fEndpointLock, "ohci endpoint lock");
 
-	// enable busmaster and memory mapped access
-	uint16 command = fPci->read_pci_config(fDevice, PCI_command, 2);
-	command &= ~PCI_command_io;
-	command |= PCI_command_master | PCI_command_memory;
+	if (fPci) {
+		// enable busmaster and memory mapped access
+		uint16 command = fPci->read_pci_config(fDevice, PCI_command, 2);
+		command &= ~PCI_command_io;
+		command |= PCI_command_master | PCI_command_memory;
 
-	fPci->write_pci_config(fDevice, PCI_command, 2, command);
+		fPci->write_pci_config(fDevice, PCI_command, 2, command);
+	}
 
 	// map the registers
-	uint32 offset = fPci->read_pci_config(fDevice, PCI_base_registers, 4);
-	offset &= PCI_address_memory_32_mask;
-	TRACE_ALWAYS("iospace offset: 0x%" B_PRIx32 "\n", offset);
 	fRegisterArea = map_physical_memory("OHCI memory mapped registers",
-		offset,	B_PAGE_SIZE, B_ANY_KERNEL_BLOCK_ADDRESS,
+		registersBase, registersSize, B_ANY_KERNEL_BLOCK_ADDRESS,
 		B_KERNEL_READ_AREA | B_KERNEL_WRITE_AREA,
 		(void **)&fOperationalRegisters);
 	if (fRegisterArea < B_OK) {
@@ -545,11 +553,11 @@ OHCI::OHCI(pci_info *info, pci_device_module_info* pci, pci_device* device, Stac
 	resume_thread(fFinishThread);
 
 	// Find the right interrupt vector, using MSIs if available.
-	fIRQ = fPCIInfo->u.h0.interrupt_line;
+	fIRQ = irq;
 	if (fIRQ == 0xFF)
 		fIRQ = 0;
 
-	if (fPci->get_msi_count(fDevice) >= 1) {
+	if (fPci && fPci->get_msi_count(fDevice) >= 1) {
 		uint32 msiVector = 0;
 		if (fPci->configure_msi(fDevice, 1, &msiVector) == B_OK
 			&& fPci->enable_msi(fDevice) == B_OK) {
@@ -560,8 +568,12 @@ OHCI::OHCI(pci_info *info, pci_device_module_info* pci, pci_device* device, Stac
 	}
 
 	if (fIRQ == 0) {
-		TRACE_MODULE_ERROR("device PCI:%d:%d:%d was assigned an invalid IRQ\n",
-			fPCIInfo->bus, fPCIInfo->device, fPCIInfo->function);
+		if (fPCIInfo) {
+			TRACE_MODULE_ERROR("device PCI:%d:%d:%d was assigned an invalid IRQ\n",
+				fPCIInfo->bus, fPCIInfo->device, fPCIInfo->function);
+		} else {
+			TRACE_MODULE_ERROR("device was assigned an invalid IRQ\n");
+		}
 		return;
 	}
 
@@ -620,7 +632,7 @@ OHCI::~OHCI()
 	delete [] fInterruptEndpoints;
 	delete fRootHub;
 
-	if (fUseMSI) {
+	if (fUseMSI && fPci) {
 		fPci->disable_msi(fDevice);
 		fPci->unconfigure_msi(fDevice);
 	}

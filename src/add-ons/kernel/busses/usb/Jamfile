@@ -12,9 +12,17 @@ KernelAddon <usb>uhci :
 	: uhci.rdef
 	;
 
-KernelAddon <usb>ohci :
+local ohci_sources =
 	ohci.cpp
 	ohci_rh.cpp
+;
+
+if $(TARGET_ARCH) = powerpc {
+	ohci_sources += ohci_wii.cpp ;
+}
+
+KernelAddon <usb>ohci :
+	$(ohci_sources)
 	: libusb.a
 	: ohci.rdef
 	;
