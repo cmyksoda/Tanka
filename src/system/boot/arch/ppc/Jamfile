@@ -10,7 +10,7 @@ local kernelGenericDriverSources =
 ;
 
 local platform ;
-for platform in [ MultiBootSubDirSetup openfirmware ] {
+for platform in [ MultiBootSubDirSetup openfirmware wii ] {
     on $(platform) {
 		BootMergeObject [ FGristFiles boot_arch_$(TARGET_KERNEL_ARCH).o ] :
 			$(kernelGenericDriverSources)

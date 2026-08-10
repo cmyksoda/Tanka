@@ -34,7 +34,6 @@ for platform in [ MultiBootSubDirSetup wii ] {
 		:
 		:
 			boot_platform_generic_wii.a
-			boot_platform_wii_$(TARGET_ARCH).o
 		;
 
 		SEARCH on [ FGristFiles $(kernel_src) ]
