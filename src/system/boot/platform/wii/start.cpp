@@ -110,7 +110,7 @@ _start(void)
 	// We must allocate a 32-bit RGB framebuffer for app_server to draw into,
 	// because the Wii VI only accepts YUYV (16-bit). We'll do software conversion
 	// in the kernel graphics driver from this fake buffer to the real one.
-	void* fake_rgb_fb = memalign(32, rmode->fbWidth * rmode->xfbHeight * 4);
+	void* fake_rgb_fb = malloc(rmode->fbWidth * rmode->xfbHeight * 4);
 	memset(fake_rgb_fb, 0, rmode->fbWidth * rmode->xfbHeight * 4);
 
 	// Populate kernel_args with fake RGB32 framebuffer details for app_server

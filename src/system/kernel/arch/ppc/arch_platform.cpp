@@ -14,6 +14,7 @@
 #include <platform/openfirmware/openfirmware.h>
 #include <real_time_clock.h>
 #include <util/kernel_cpp.h>
+#include <vm/vm.h>
 
 
 void *gFDT;

@@ -100,6 +100,23 @@ actions BuildBiosLoader {
 
 
 #
+# Wii loader creation
+#
+rule BuildWiiLoader {
+	local haikuLoader = $(1) ;
+	local bootLoader = $(2) ;
+
+	Depends $(haikuLoader) : $(bootLoader) ;
+	MakeLocateDebug $(haikuLoader) ;
+}
+
+actions BuildWiiLoader {
+	$(RM) -f $(1)
+	cp $(2) $(1)
+}
+
+
+#
 # EFI loader creation
 #
 rule BuildEFILoader {
@@ -461,6 +478,9 @@ for platform in [ MultiBootSubDirSetup ] {
 
 			case next_m68k :
 				BuildAoutLoader haiku_loader.$(TARGET_BOOT_PLATFORM) : <revisioned>boot_loader_$(TARGET_BOOT_PLATFORM) ;
+
+			case wii :
+				BuildWiiLoader haiku_loader.$(TARGET_BOOT_PLATFORM) : <revisioned>boot_loader_$(TARGET_BOOT_PLATFORM) ;
 
 			case * :
 				Exit "Currently unsupported haiku_loader:" $(TARGET_BOOT_PLATFORM) ;
