@@ -8,3 +8,4 @@ SubInclude HAIKU_TOP src add-ons input_server devices tablet ;
 SubInclude HAIKU_TOP src add-ons input_server devices virtio ;
 SubInclude HAIKU_TOP src add-ons input_server devices virtualkeyboard ;
 SubInclude HAIKU_TOP src add-ons input_server devices wacom ;
+SubInclude HAIKU_TOP src add-ons input_server devices wiimote ;
