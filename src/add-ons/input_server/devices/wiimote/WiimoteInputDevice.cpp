@@ -19,6 +19,10 @@
 // Wiimote HID button bitmasks (standard)
 #define WIIMOTE_BUTTON_A 0x0008
 #define WIIMOTE_BUTTON_B 0x0004
+#define WIIMOTE_BUTTON_LEFT 0x0100
+#define WIIMOTE_BUTTON_RIGHT 0x0200
+#define WIIMOTE_BUTTON_DOWN 0x0400
+#define WIIMOTE_BUTTON_UP 0x0800
 
 
 extern "C" BInputServerDevice*
@@ -164,7 +168,21 @@ WiimoteInputDevice::_PollLoop()
 				fLastButtons = mouseButtons;
 			}
 			
-			// TODO: Add IR pointer parsing to inject B_MOUSE_MOVED messages
+			// Map D-Pad to mouse movement
+			float deltaX = 0;
+			float deltaY = 0;
+			if (buttons & WIIMOTE_BUTTON_LEFT) deltaX -= 5;
+			if (buttons & WIIMOTE_BUTTON_RIGHT) deltaX += 5;
+			if (buttons & WIIMOTE_BUTTON_UP) deltaY -= 5;
+			if (buttons & WIIMOTE_BUTTON_DOWN) deltaY += 5;
+
+			if (deltaX != 0 || deltaY != 0) {
+				BMessage* moveMsg = new BMessage(B_MOUSE_MOVED);
+				moveMsg->AddInt64("when", system_time());
+				moveMsg->AddFloat("delta_x", deltaX);
+				moveMsg->AddFloat("delta_y", deltaY);
+				EnqueueMessage(moveMsg);
+			}
 		}
 	}
 }
