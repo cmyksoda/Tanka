@@ -15,7 +15,7 @@ fi
 
 BOOT_DOL="$1"
 HAIKU_IMG="$2"
-OUTPUT_DIR="."
+OUTPUT_DIR="Haiku-PowerPCii"
 
 if [ ! -f "$BOOT_DOL" ]; then
     echo "Error: Cannot find boot.dol at $BOOT_DOL"
@@ -60,10 +60,10 @@ echo "Pre-allocating 256MB swap file (swap.img)..."
 dd if=/dev/zero of="$OUTPUT_DIR/haiku/swap.img" bs=1M count=256 status=none
 
 echo ""
-echo "Done! You can now zip the 'apps/' and 'haiku/' folders in the project root to distribute them."
+echo "Done! You can now zip the 'Haiku-PowerPCii' folder in the project root to distribute them."
 echo ""
 echo "Structure created:"
-echo "  apps/HaikuPowerPCii/boot.dol"
-echo "  apps/HaikuPowerPCii/meta.xml"
-echo "  haiku/haiku.img"
-echo "  haiku/swap.img"
+echo "  Haiku-PowerPCii/apps/HaikuPowerPCii/boot.dol"
+echo "  Haiku-PowerPCii/apps/HaikuPowerPCii/meta.xml"
+echo "  Haiku-PowerPCii/haiku/haiku.img"
+echo "  Haiku-PowerPCii/haiku/swap.img"
