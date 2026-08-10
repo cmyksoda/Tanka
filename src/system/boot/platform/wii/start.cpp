@@ -19,6 +19,8 @@
 
 extern "C" void _start(void);
 extern "C" int main(stage2_args *args);
+extern "C" status_t arch_start_kernel(struct kernel_args *kernelArgs,
+		addr_t kernelEntry, addr_t kernelStackTop);
 
 static void *xfb = NULL;
 static GXRModeObj *rmode = NULL;
@@ -96,12 +98,7 @@ _start(void)
 		printf("USB Keyboard failed to initialize.\n");
 	}
 
-	// Initialize FAT
-	if (!fatInitDefault()) {
-		printf("fatInitDefault failed! SD card not found.\n");
-	} else {
-		printf("SD card FAT initialized successfully.\n");
-	}
+// SD card is accessed directly via libogc's block device interface now
 
 	stage2_args args;
 	memset(&args, 0, sizeof(stage2_args));

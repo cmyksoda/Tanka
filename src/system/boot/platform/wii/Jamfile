@@ -16,6 +16,7 @@ HAIKU_BOOT_wii_LIBS = -lwiikeyboard -lwiiuse -lbte -logc ;
 
 local platform_src =
 	start.cpp
+	arch_start_kernel.S
 	wii_sd_boot_device.cpp
 	mmu.cpp
 ;
