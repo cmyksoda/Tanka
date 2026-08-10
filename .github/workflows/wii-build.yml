@@ -32,6 +32,7 @@ jobs:
 
     - name: Configure Haiku for PowerPC
       run: |
+        mkdir -p /work
         mkdir -p generated.ppc
         cd generated.ppc
         ../configure --cross-tools-source ../../buildtools --build-cross-tools ppc
@@ -45,4 +46,9 @@ jobs:
       run: |
         cd generated.ppc
         jam -q wii_sdhc
+
+    - name: Build 4GB Haiku Root Image
+      run: |
+        cd generated.ppc
+        jam -q -sHAIKU_IMAGE_SIZE=4096 @image
 
