@@ -26,3 +26,4 @@ build/user_config_headers
 # clangd related tooling for IDE code completion
 compile_commands.json
 /Haiku-PowerPCii/
+project-notes/

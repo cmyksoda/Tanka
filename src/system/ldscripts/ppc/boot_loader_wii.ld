@@ -28,12 +28,20 @@ SECTIONS
 		*(.data .gnu.linkonce.d.*)
 		*(.data.rel.ro.local .data.rel.ro*)
 		*(.got .got2)
-		*(.sdata .sdata.* .gnu.linkonce.s.* .fixup) }
+	}
+
+	.sdata : {
+		*(.sdata .sdata.* .gnu.linkonce.s.* .fixup)
+	}
 
 	/* uninitialized data (in same segment as writable data) */
 	__bss_start = .;
-	.bss : { *(.sbss .sbss.* .gnu.linkonce.sb.*)
+	
+	.sbss : {
+		*(.sbss .sbss.* .gnu.linkonce.sb.*)
+	}
 
+	.bss : {
 		*(.bss .bss.* .gnu.linkonce.b.*)
 		. = ALIGN(0x1000);
 	}
