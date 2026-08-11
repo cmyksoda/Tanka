@@ -51,5 +51,5 @@ jobs:
     - name: Build 4GB Haiku Root Image
       run: |
         cd generated.ppc
-        HAIKU_REVISION=hrev1 jam -q -sHAIKU_IMAGE_SIZE=4096 @image
+        HAIKU_REVISION=hrev1 jam -q -sHAIKU_IMAGE_SIZE=4096 @nightly-raw
 

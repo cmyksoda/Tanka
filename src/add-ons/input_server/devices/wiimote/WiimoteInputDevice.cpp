@@ -42,8 +42,7 @@ WiimoteInputDevice::WiimoteInputDevice()
 	: fThread(-1),
 	  fActive(false),
 	  fDeviceFd(-1),
-	  fLastButtons(0),
-	  fLastDpadButtons(0)
+	  fLastButtons(0)
 {
 }
 
@@ -178,39 +177,6 @@ WiimoteInputDevice::_PollLoop()
 				EnqueueMessage(msg);
 				fLastButtons = mouseButtons;
 			}
-			
-			struct key_map {
-				uint16 button;
-				int32 key;
-			};
-			const key_map kKeyMaps[] = {
-				{ WIIMOTE_BUTTON_UP, B_UP_ARROW },
-				{ WIIMOTE_BUTTON_DOWN, B_DOWN_ARROW },
-				{ WIIMOTE_BUTTON_LEFT, B_LEFT_ARROW },
-				{ WIIMOTE_BUTTON_RIGHT, B_RIGHT_ARROW },
-				{ WIIMOTE_BUTTON_1, B_ENTER },
-				{ WIIMOTE_BUTTON_2, B_ESCAPE },
-				{ WIIMOTE_BUTTON_PLUS, B_PAGE_UP },
-				{ WIIMOTE_BUTTON_MINUS, B_PAGE_DOWN },
-				{ WIIMOTE_BUTTON_HOME, B_HOME }
-			};
-
-			for (int i = 0; i < 9; i++) {
-				bool isDown = (buttons & kKeyMaps[i].button) != 0;
-				bool wasDown = (fLastDpadButtons & kKeyMaps[i].button) != 0;
-				
-				if (isDown != wasDown) {
-					BMessage* msg = new(std::nothrow) BMessage(isDown ? B_KEY_DOWN : B_KEY_UP);
-					if (msg != NULL) {
-						msg->AddInt64("when", system_time());
-						msg->AddInt32("key", kKeyMaps[i].key);
-						msg->AddInt32("raw_char", kKeyMaps[i].key);
-						msg->AddInt32("modifiers", 0);
-						EnqueueMessage(msg);
-					}
-				}
-			}
-			fLastDpadButtons = buttons;
 			
 			// Parse IR data from Report 0x33
 			if (bytesRead >= 18 && buffer[0] == 0x33) {

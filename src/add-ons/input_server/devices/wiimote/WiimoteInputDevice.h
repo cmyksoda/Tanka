@@ -32,7 +32,6 @@ private:
 	volatile bool			fActive;
 	int						fDeviceFd;
 	uint32					fLastButtons;
-	uint32					fLastDpadButtons;
 };
 
 extern "C" BInputServerDevice* instantiate_input_device();
