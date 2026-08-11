@@ -17,6 +17,9 @@
 #define OHCI_WII_USB_BUS_MODULE_NAME "busses/usb/ohci/wii/device/v1"
 #define OHCI_WII_DEVICE_MODULE_NAME "busses/usb/ohci/wii/v1"
 
+extern device_manager_info* gDeviceManager;
+extern usb_for_controller_interface* gUSB;
+
 #define HOLLYWOOD_OHCI_0_BASE 0xCD050000
 #define HOLLYWOOD_OHCI_1_BASE 0xCD060000
 #define HOLLYWOOD_OHCI_SIZE   0x1000
@@ -178,7 +181,7 @@ driver_module_info sOHCIWiiDevice = {
 	},
 	.supports_device = supports_device_wii,
 	.register_device = register_device_wii,
-	.init_device = init_device_wii,
-	.uninit_device = uninit_device_wii,
+	.init_driver = init_device_wii,
+	.uninit_driver = uninit_device_wii,
 	.register_child_devices = register_child_devices_wii,
 };

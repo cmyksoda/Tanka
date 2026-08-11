@@ -26,7 +26,7 @@
 #define USB_MODULE_NAME "ohci"
 
 device_manager_info* gDeviceManager;
-static usb_for_controller_interface* gUSB;
+usb_for_controller_interface* gUSB;
 
 
 #define OHCI_PCI_DEVICE_MODULE_NAME "busses/usb/ohci/pci/driver_v1"
