@@ -104,7 +104,12 @@ extern "C" {
 	void* FindDevice(const char*) { return NULL; }
 	int AddDevice(void*) { return -1; }
 	int RemoveDevice(const char*) { return -1; }
+	extern const unsigned char _ctype_[257];
 	const unsigned char _ctype_[257] = {0};
 	void* __Arena1Lo;
 	void build_argv() {}
+	int usleep(unsigned int usec) { return 0; }
+	void* memalign(size_t alignment, size_t size) { return NULL; }
+	void __init() {}
+	void* __ppc_excpt_buf[256];
 }

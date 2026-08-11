@@ -44,6 +44,7 @@ SECTIONS
 	/* uninitialized data (in same segment as writable data) */
 	__bss_start = .;
 	
+	__sbss_start = .;
 	.sbss : {
 		*(.sbss .sbss.* .gnu.linkonce.sb.*)
 	}
@@ -52,6 +53,7 @@ SECTIONS
 		*(.bss .bss.* .gnu.linkonce.b.*)
 		. = ALIGN(0x1000);
 	}
+	__bss_end = .;
 
 	_end = . ;
 
