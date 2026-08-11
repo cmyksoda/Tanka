@@ -112,4 +112,14 @@ extern "C" {
 	void* memalign(size_t alignment, size_t size) { return NULL; }
 	void __init() {}
 	void* __ppc_excpt_buf[256];
+	
+	void* __ipcbufferHi;
+	void* __Arena1Hi;
+	int __isIPL;
+	void _free_r(void*, void*) {}
+	unsigned long _strtoul_r(void*, const char*, char**, int) { return 0; }
+	unsigned long long _strtoull_r(void*, const char*, char**, int) { return 0; }
+	void* _memalign_r(void*, size_t, size_t) { return NULL; }
+	void* __ppc_excpt_table[256];
+	float cosf(float x) { return 1.0f; }
 }
