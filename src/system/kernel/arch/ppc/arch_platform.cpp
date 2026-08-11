@@ -391,7 +391,7 @@ private:
 };
 
 }	// namespace BPrivate
-
+using BPrivate::PPCWii;
 
 PPCWii::PPCWii()
 	:
