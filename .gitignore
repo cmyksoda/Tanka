@@ -27,3 +27,6 @@ build/user_config_headers
 compile_commands.json
 /Haiku-PowerPCii/
 project-notes/
+
+# Stray build logs
+log*.txt
