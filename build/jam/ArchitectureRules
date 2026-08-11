@@ -225,7 +225,7 @@ rule KernelArchitectureSetup architecture
 	switch $(cpu) {
 		case ppc :
 			HAIKU_KERNEL_PLATFORM ?= openfirmware ;
-			HAIKU_BOOT_TARGETS += openfirmware wii ;
+			HAIKU_BOOT_TARGETS += wii ;
 
 			HAIKU_BOOT_FLOPPY_IMAGE_SIZE = 1440 ; # in kB
 			# offset in floppy image (>= sizeof(haiku_loader))
