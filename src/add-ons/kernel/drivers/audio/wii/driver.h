@@ -2,8 +2,8 @@
  * Copyright 2007 Haiku Inc. All rights reserved.
  * Distributed under the terms of the MIT License.
  */
-#ifndef NULL_AUDIO_DRIVER_H
-#define NULL_AUDIO_DRIVER_H
+#ifndef WII_AUDIO_DRIVER_H
+#define WII_AUDIO_DRIVER_H
 
 #include <drivers/driver_settings.h>
 #include <drivers/Drivers.h>
@@ -58,5 +58,5 @@ status_t wii_hw_create_virtual_buffers(device_stream_t* stream, const char* name
 status_t wii_start_hardware(device_t* device);
 void wii_stop_hardware(device_t* device);
 
-#endif /* NULL_AUDIO_DRIVER_H */
+#endif /* WII_AUDIO_DRIVER_H */
 

@@ -59,8 +59,8 @@ get_description(void* cookie, multi_description* data)
 	description.interface_version = B_CURRENT_INTERFACE_VERSION;
 	description.interface_minimum = B_CURRENT_INTERFACE_VERSION;
 
-	strcpy(description.friendly_name,"Virtual audio (wii_audio)");
-	strcpy(description.vendor_info,"Host/Haiku");
+	strcpy(description.friendly_name,"Nintendo Wii Audio");
+	strcpy(description.vendor_info,"Nintendo/Hollywood");
 
 	description.output_channel_count = 2;
 	description.input_channel_count = 2;
@@ -79,7 +79,7 @@ get_description(void* cookie, multi_description* data)
 	description.lock_sources = B_MULTI_LOCK_INTERNAL;
 	description.timecode_sources = 0;
 	description.interface_flags = B_MULTI_INTERFACE_PLAYBACK | B_MULTI_INTERFACE_RECORD;
-	description.start_latency = 30000;
+	description.start_latency = 3000;
 
 	strcpy(description.control_panel,"");
 

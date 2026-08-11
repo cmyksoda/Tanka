@@ -19,19 +19,18 @@ wii_hw_create_virtual_buffers(device_stream_t* stream, const char* name)
 	buffer_size = stream->num_channels
 				* format_to_sample_size(stream->format)
 				* stream->buffer_length;
-	buffer_size = (buffer_size + 127) & (~127);
+	// 32-byte alignment required for Wii DMA
+	buffer_size = (buffer_size + 31) & (~31);
 
 	area_size = buffer_size * stream->num_buffers;
 	area_size = (area_size + B_PAGE_SIZE - 1) & (~(B_PAGE_SIZE -1));
 
 	stream->buffer_area = create_area("wii_audio_buffers", (void**)&buffer,
-							B_ANY_KERNEL_ADDRESS, area_size,
-							B_CONTIGUOUS, B_READ_AREA | B_WRITE_AREA);
+						B_ANY_KERNEL_ADDRESS, area_size,
+						B_CONTIGUOUS, B_READ_AREA | B_WRITE_AREA);
 	if (stream->buffer_area < B_OK)
 		return stream->buffer_area;
 
-	// Get the correct address for setting up the buffers
-	// pointers being passed back to userland
 	for (i = 0; i < stream->num_buffers; i++)
 		stream->buffers[i] = buffer + (i * buffer_size);
 
@@ -40,16 +39,30 @@ wii_hw_create_virtual_buffers(device_stream_t* stream, const char* name)
 }
 
 
+// AI register offsets (base 0xCD006C00, 32-bit access, big-endian)
+#define WII_AI_BASE      0xCD006C00
+#define WII_AI_SIZE      0x20
+
+// AI_CONTROL bits
+#define AI_PSTAT         (1 << 0)   // Play status: 1 = playing
+#define AI_AFR           (1 << 1)   // Auxiliary frequency (match RATE)
+#define AI_AIINTMSK      (1 << 2)   // Interrupt mask
+#define AI_AIINT         (1 << 3)   // Interrupt status (write 1 to clear)
+#define AI_AIINTVLD      (1 << 4)   // Interrupt valid
+#define AI_SCRESET       (1 << 5)   // Sample counter reset
+#define AI_RATE_48KHZ    0          // bit 6 = 0: 48kHz
+#define AI_RATE_32KHZ    (1 << 6)   // bit 6 = 1: 32kHz
+
+// AI register indices (32-bit word offsets)
+#define AI_CONTROL_REG   0   // 0xCD006C00
+#define AI_VOLUME_REG    1   // 0xCD006C04
+#define AI_AISCNT_REG    2   // 0xCD006C08
+#define AI_AIIT_REG      3   // 0xCD006C0C
+
+
 static int32
-wii_fake_interrupt(void* cookie)
+wii_audio_thread(void* cookie)
 {
-	// This thread is supposed to fake the interrupt
-	// handling done in communication with the
-	// hardware usually. What it does is nearly the
-	// same like all soundrivers, get the interrupt
-	// exchange the buffer pointer and update the
-	// time information. Instead of exiting, we wait
-	// until the next fake interrupt appears.
 	bigtime_t sleepTime;
 	device_t* device = (device_t*) cookie;
 	int sampleRate;
@@ -64,25 +77,32 @@ wii_fake_interrupt(void* cookie)
 			break;
 	}
 
-	// The time between until we get a new valid buffer
-	// from our soundcard: buffer_length / samplerate
 	sleepTime = (device->playback_stream.buffer_length * 1000000LL) / sampleRate;
 
-	area_id dspArea = -1;
-	void* regs = NULL;
-	dspArea = map_physical_memory("wii dsp registers", 0xCD005000, B_PAGE_SIZE,
-		B_ANY_KERNEL_ADDRESS, B_KERNEL_READ_AREA | B_KERNEL_WRITE_AREA, &regs);
-	volatile uint16* dspReg = (volatile uint16*)regs;
-
+	// Map AI registers
 	area_id aiArea = -1;
 	void* aiRegs = NULL;
-	aiArea = map_physical_memory("wii ai registers", 0xCD006C00, B_PAGE_SIZE,
+	aiArea = map_physical_memory("wii ai registers", WII_AI_BASE, WII_AI_SIZE,
 		B_ANY_KERNEL_ADDRESS, B_KERNEL_READ_AREA | B_KERNEL_WRITE_AREA, &aiRegs);
 	volatile uint32* aiReg = (volatile uint32*)aiRegs;
 
 	if (aiReg) {
-		// Set DSP sample rate to 48kHz (bit 1 = 1)
-		aiReg[0] = (aiReg[0] & ~0x02) | 0x02;
+		// Set 48kHz, clear any pending interrupt, enable playback
+		uint32 ctrl = aiReg[AI_CONTROL_REG];
+		ctrl &= ~AI_RATE_32KHZ;           // 48kHz (bit 6 = 0)
+		ctrl &= ~AI_AFR;                  // AFR matches rate
+		ctrl |= AI_AIINT;                 // Clear pending interrupt
+		ctrl |= AI_SCRESET;               // Reset sample counter
+		aiReg[AI_CONTROL_REG] = ctrl;
+
+		// Set volume to max on both channels (0xFF each)
+		aiReg[AI_VOLUME_REG] = 0x00FF00FF;
+
+		// Enable playback
+		ctrl = aiReg[AI_CONTROL_REG];
+		ctrl &= ~AI_SCRESET;              // Clear reset bit
+		ctrl |= AI_PSTAT;                 // Start playing
+		aiReg[AI_CONTROL_REG] = ctrl;
 	}
 
 	bigtime_t nextTime = system_time();
@@ -105,35 +125,28 @@ wii_fake_interrupt(void* cookie)
 
 		restore_interrupts(status);
 
-		// Wii Audio DMA
-		if (dspReg) {
-			size_t byte_length = device->playback_stream.buffer_length * 4;
-			void* buf = device->playback_stream.buffers[cycle];
-			
-			// Flush data cache so DSP reads correct samples from RAM
-			clear_caches(buf, byte_length, B_FLUSH_DCACHE);
-			
-			physical_entry pe;
-			if (get_memory_map(buf, byte_length, &pe, 1) == B_OK) {
-				uint32 phys_addr = (uint32)pe.address;
-				
-				// Init DMA
-				dspReg[24] = (dspReg[24] & ~0x1fff) | (phys_addr >> 16);
-				dspReg[25] = (dspReg[25] & ~0xffe0) | (phys_addr & 0xffff);
-				dspReg[27] = (dspReg[27] & ~0x7fff) | (byte_length >> 5);
-				
-				// Start DMA
-				dspReg[27] |= 0x8000;
-			}
-		}
+		// The Wii's AI hardware fetches audio from the DSP output.
+		// Without a running DSP microcode program, the AI plays silence.
+		// For now, we rely on the polling thread for buffer timing only.
+		// A full implementation requires loading the Wii DSP ucode and
+		// programming the DSP's DMEM/ARAM DMA to stream from our buffers.
+		//
+		// The buffer data is still valid and available for any DSP-based
+		// audio path that gets wired up later.
 
 		release_sem_etc(device->playback_stream.buffer_ready_sem, 1, B_DO_NOT_RESCHEDULE);
 		release_sem_etc(device->record_stream.buffer_ready_sem, 1, B_DO_NOT_RESCHEDULE);
 		nextTime += sleepTime;
 		snooze_until(nextTime, B_SYSTEM_TIMEBASE);
 	}
-	
-	if (dspArea >= 0) delete_area(dspArea);
+
+	// Stop playback and clean up
+	if (aiReg) {
+		uint32 ctrl = aiReg[AI_CONTROL_REG];
+		ctrl &= ~AI_PSTAT;
+		aiReg[AI_CONTROL_REG] = ctrl;
+	}
+
 	if (aiArea >= 0) delete_area(aiArea);
 	
 	return B_OK;
@@ -143,10 +156,10 @@ wii_fake_interrupt(void* cookie)
 status_t
 wii_start_hardware(device_t* device)
 {
-	dprintf("wii_audio: %s spawning fake interrupter\n", __func__);
+	dprintf("wii_audio: %s\n", __func__);
 	device->running = true;
-	device->interrupt_thread = spawn_kernel_thread(wii_fake_interrupt, "wii_audio interrupter",
-								B_REAL_TIME_PRIORITY, (void*)device);
+	device->interrupt_thread = spawn_kernel_thread(wii_audio_thread, "wii_audio interrupter",
+							B_REAL_TIME_PRIORITY, (void*)device);
 	return resume_thread(device->interrupt_thread);
 }
 
@@ -155,5 +168,6 @@ void
 wii_stop_hardware(device_t* device)
 {
 	device->running = false;
+	status_t status;
+	wait_for_thread(device->interrupt_thread, &status);
 }
-
