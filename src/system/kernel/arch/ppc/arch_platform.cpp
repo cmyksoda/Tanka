@@ -11,7 +11,7 @@
 
 #include <arch/generic/debug_uart.h>
 #include <boot/kernel_args.h>
-#include <platform/openfirmware/openfirmware.h>
+#include <platform/wii/wii.h>
 #include <real_time_clock.h>
 #include <util/kernel_cpp.h>
 #include <vm/vm.h>
@@ -36,201 +36,6 @@ PPCPlatform *
 PPCPlatform::Default()
 {
 	return sPPCPlatform;
-}
-
-
-// #pragma mark - Open Firmware
-
-
-namespace BPrivate {
-
-class PPCOpenFirmware : public PPCPlatform {
-public:
-	PPCOpenFirmware();
-	virtual ~PPCOpenFirmware();
-
-	virtual status_t Init(struct kernel_args *kernelArgs);
-	virtual status_t InitSerialDebug(struct kernel_args *kernelArgs);
-	virtual status_t InitPostVM(struct kernel_args *kernelArgs);
-	virtual status_t InitRTC(struct kernel_args *kernelArgs,
-		struct real_time_data *data);
-
-	virtual char SerialDebugGetChar();
-	virtual void SerialDebugPutChar(char c);
-
-	virtual	void SetHardwareRTC(uint64 seconds);
-	virtual	uint32 GetHardwareRTC();
-
-	virtual	void ShutDown(bool reboot);
-
-private:
-	int	fInput;
-	int	fOutput;
-	int	fRTC;
-};
-
-}	// namespace BPrivate
-
-
-using BPrivate::PPCOpenFirmware;
-
-
-// OF debugger commands
-
-
-static int
-debug_command_of_exit(int argc, char **argv)
-{
-	of_exit();
-	kprintf("of_exit() failed!\n");
-	return 0;
-}
-
-
-static int
-debug_command_of_enter(int argc, char **argv)
-{
-	of_call_client_function("enter", 0, 0);
-	return 0;
-}
-
-
-PPCOpenFirmware::PPCOpenFirmware()
-	: PPCPlatform(PPC_PLATFORM_OPEN_FIRMWARE),
-	  fInput(-1),
-	  fOutput(-1),
-	  fRTC(-1)
-{
-}
-
-
-PPCOpenFirmware::~PPCOpenFirmware()
-{
-}
-
-
-status_t
-PPCOpenFirmware::Init(struct kernel_args *kernelArgs)
-{
-	return of_init(
-		(intptr_t(*)(void*))kernelArgs->platform_args.openfirmware_entry);
-}
-
-
-status_t
-PPCOpenFirmware::InitSerialDebug(struct kernel_args *kernelArgs)
-{
-	if (of_getprop(gChosen, "stdin", &fInput, sizeof(int)) == OF_FAILED)
-		return B_ERROR;
-	// Always take OpenFirmware's stdout for the kernel debug console, even when
-	// a framebuffer is enabled. When the firmware's output-device is a serial
-	// line (our dingusppc/QEMU setup uses output-device=scca) this yields
-	// kernel dprintf/panic/KDL over serial *and* a usable framebuffer for
-	// app_server at the same time. The old code only took stdout when the
-	// framebuffer was disabled, assuming stdout is always the screen - which is
-	// untrue whenever output-device points at a UART, and is exactly why a boot
-	// splash / framebuffer used to have to be disabled to get any serial log.
-	if (of_getprop(gChosen, "stdout", &fOutput, sizeof(int)) == OF_FAILED)
-		return B_ERROR;
-
-	return B_OK;
-}
-
-
-status_t
-PPCOpenFirmware::InitPostVM(struct kernel_args *kernelArgs)
-{
-	add_debugger_command("of_exit", &debug_command_of_exit,
-		"Exit to the Open Firmware prompt. No way to get back into the OS!");
-	add_debugger_command("of_enter", &debug_command_of_enter,
-		"Enter a subordinate Open Firmware interpreter. Quitting it returns "
-		"to KDL.");
-
-	return B_OK;
-}
-
-
-// InitRTC
-status_t
-PPCOpenFirmware::InitRTC(struct kernel_args *kernelArgs,
-	struct real_time_data *data)
-{
-	// open RTC
-	fRTC = of_open(kernelArgs->platform_args.rtc_path);
-	if (fRTC == OF_FAILED) {
-		dprintf("PPCOpenFirmware::InitRTC(): Failed open RTC device!\n");
-		return B_ERROR;
-	}
-
-	return B_OK;
-}
-
-
-char
-PPCOpenFirmware::SerialDebugGetChar()
-{
-	int key;
-	if (of_interpret("key", 0, 1, &key) == OF_FAILED)
-		return 0;
-	return (char)key;
-}
-
-
-void
-PPCOpenFirmware::SerialDebugPutChar(char c)
-{
-	if (fOutput == -1)
-		return;
-
-	if (c == '\n')
-		of_write(fOutput, "\r\n", 2);
-	else
-		of_write(fOutput, &c, 1);
-}
-
-
-void
-PPCOpenFirmware::SetHardwareRTC(uint64 seconds)
-{
-	struct tm t;
-	rtc_secs_to_tm(seconds, &t);
-
-	t.tm_year += RTC_EPOCH_BASE_YEAR;
-	t.tm_mon++;
-
-	if (of_call_method(fRTC, "set-time", 6, 0, t.tm_year, t.tm_mon, t.tm_mday,
-			t.tm_hour, t.tm_min, t.tm_sec) == OF_FAILED) {
-		dprintf("PPCOpenFirmware::SetHardwareRTC(): Failed to set RTC!\n");
-	}
-}
-
-
-uint32
-PPCOpenFirmware::GetHardwareRTC()
-{
-	struct tm t;
-	if (of_call_method(fRTC, "get-time", 0, 6, &t.tm_year, &t.tm_mon,
-			&t.tm_mday, &t.tm_hour, &t.tm_min, &t.tm_sec) == OF_FAILED) {
-		dprintf("PPCOpenFirmware::GetHardwareRTC(): Failed to get RTC!\n");
-		return 0;
-	}
-
-	t.tm_year -= RTC_EPOCH_BASE_YEAR;
-	t.tm_mon--;
-
-	return rtc_tm_to_secs(&t);
-}
-
-
-void
-PPCOpenFirmware::ShutDown(bool reboot)
-{
-	if (reboot) {
-		of_interpret("reset-all", 0, 0);
-	} else {
-		// not standardized, so it might fail
-		of_interpret("shut-down", 0, 0);
-	}
 }
 
 
@@ -414,7 +219,7 @@ PPCWii::~PPCWii()
 status_t
 PPCWii::Init(struct kernel_args *kernelArgs)
 {
-	return B_OK;
+	return wii_platform_init(kernelArgs);
 }
 
 
@@ -428,6 +233,10 @@ PPCWii::InitSerialDebug(struct kernel_args *kernelArgs)
 status_t
 PPCWii::InitPostVM(struct kernel_args *kernelArgs)
 {
+	status_t error = wii_platform_init_post_vm(kernelArgs);
+	if (error != B_OK)
+		return error;
+
 	// Map the fake RGB32 framebuffer (which app_server draws to)
 	fFrameBufferWidth = kernelArgs->frame_buffer.width;
 	fFrameBufferHeight = kernelArgs->frame_buffer.height;
@@ -527,7 +336,7 @@ status_t
 PPCWii::InitRTC(struct kernel_args *kernelArgs,
 	struct real_time_data *data)
 {
-	return B_OK;
+	return wii_rtc_init();
 }
 
 
@@ -547,26 +356,28 @@ PPCWii::SerialDebugPutChar(char c)
 void
 PPCWii::SetHardwareRTC(uint64 seconds)
 {
+	wii_rtc_set((uint32)seconds);
 }
 
 
 uint32
 PPCWii::GetHardwareRTC()
 {
-	return 0;
+	return wii_rtc_get();
 }
 
 
 void
 PPCWii::ShutDown(bool reboot)
 {
+	wii_platform_shutdown(reboot);
 }
 
 
 // # pragma mark -
 
 
-#define PLATFORM_BUFFER_SIZE MAX(MAX(sizeof(PPCOpenFirmware),sizeof(PPCUBoot)),sizeof(PPCWii))
+#define PLATFORM_BUFFER_SIZE MAX(sizeof(PPCUBoot), sizeof(PPCWii))
 // static buffer for constructing the actual PPCPlatform
 static char *sPPCPlatformBuffer[PLATFORM_BUFFER_SIZE];
 
@@ -636,11 +447,7 @@ ppc_get_gmac_mac(uint8* address)
 status_t
 arch_platform_init(struct kernel_args *kernelArgs)
 {
-	// only OpenFirmware supported for now
 	switch (kernelArgs->arch_args.platform) {
-		case PPC_PLATFORM_OPEN_FIRMWARE:
-			sPPCPlatform = new(sPPCPlatformBuffer) PPCOpenFirmware;
-			break;
 		case PPC_PLATFORM_U_BOOT:
 			sPPCPlatform = new(sPPCPlatformBuffer) PPCUBoot;
 			break;

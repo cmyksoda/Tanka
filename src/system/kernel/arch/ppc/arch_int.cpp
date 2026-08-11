@@ -21,6 +21,7 @@
 #include <device_manager.h>
 #include <kscheduler.h>
 #include <interrupt_controller.h>
+#include <platform/wii/wii.h>
 #include <smp.h>
 #include <thread.h>
 #include <timer.h>
@@ -548,163 +549,6 @@ arch_int_init_io(kernel_args* args)
 }
 
 
-template<typename ModuleInfo>
-struct Module : DoublyLinkedListLinkImpl<Module<ModuleInfo> > {
-	Module(ModuleInfo *module)
-		: module(module)
-	{
-	}
-
-	~Module()
-	{
-		if (module)
-			put_module(((module_info*)module)->name);
-	}
-
-	ModuleInfo	*module;
-};
-
-typedef Module<interrupt_controller_module_info> PICModule;
-
-struct PICModuleList : DoublyLinkedList<PICModule> {
-	~PICModuleList()
-	{
-		while (PICModule *module = First()) {
-			Remove(module);
-			delete module;
-		}
-	}
-};
-
-
-// get_next_child_node() filters children through device_node::CompareTo(),
-// which treats a NULL attribute list as "match nothing" (returns -1). Pass an
-// empty (NULL-terminated) attribute list instead so every child matches.
-static const device_attr kMatchAnyChild[] = { {} };
-
-class DeviceTreeIterator {
-public:
-	DeviceTreeIterator(device_manager_info *deviceManager)
-		: fDeviceManager(deviceManager),
-		  fNode(NULL),
-		  fParent(NULL)
-	{
-		Rewind();
-	}
-
-	~DeviceTreeIterator()
-	{
-		if (fParent != NULL)
-			fDeviceManager->put_node(fParent);
-		if (fNode != NULL)
-			fDeviceManager->put_node(fNode);
-	}
-
-	void Rewind()
-	{
-		fNode = fDeviceManager->get_root_node();
-	}
-
-	bool HasNext() const
-	{
-		return (fNode != NULL);
-	}
-
-	device_node *Next()
-	{
-		if (fNode == NULL)
-			return NULL;
-
-		device_node *foundNode = fNode;
-
-		// get first child
-		device_node *child = NULL;
-		if (fDeviceManager->get_next_child_node(fNode, kMatchAnyChild, &child)
-				== B_OK) {
-			// move to the child node
-			if (fParent != NULL)
-				fDeviceManager->put_node(fParent);
-			fParent = fNode;
-			fNode = child;
-
-		// no more children; backtrack to find the next sibling
-		} else {
-			while (fParent != NULL) {
-				if (fDeviceManager->get_next_child_node(fParent, kMatchAnyChild, &fNode)
-						== B_OK) {
-						// get_next_child_node() always puts the node
-					break;
-				}
-				fNode = fParent;
-				fParent = fDeviceManager->get_parent_node(fNode);
-			}
-
-			// if we hit the root node again, we're done
-			if (fParent == NULL) {
-				fDeviceManager->put_node(fNode);
-				fNode = NULL;
-			}
-		}
-
-		return foundNode;
-	}
-
-private:
-	device_manager_info *fDeviceManager;
-	device_node	*fNode;
-	device_node	*fParent;
-};
-
-
-static void
-get_interrupt_controller_modules(PICModuleList &list)
-{
-	const char *namePrefix = "interrupt_controllers/";
-	size_t namePrefixLen = strlen(namePrefix);
-
-	char name[B_PATH_NAME_LENGTH];
-	size_t length;
-	uint32 cookie = 0;
-	while (get_next_loaded_module_name(&cookie, name, &(length = sizeof(name)))
-			== B_OK) {
-		// an interrupt controller module?
-		if (length <= namePrefixLen
-			|| strncmp(name, namePrefix, namePrefixLen) != 0) {
-			continue;
-		}
-
-		// get the module
-		interrupt_controller_module_info *moduleInfo;
-		if (get_module(name, (module_info**)&moduleInfo) != B_OK)
-			continue;
-
-		// add it to the list
-		PICModule *module = new(nothrow) PICModule(moduleInfo);
-		if (!module) {
-			put_module(((module_info*)moduleInfo)->name);
-			continue;
-		}
-		list.Add(module);
-	}
-}
-
-
-static bool
-probe_pic_device(device_node *node, PICModuleList &picModules)
-{
-	for (PICModule *module = picModules.Head();
-		 module;
-		 module = picModules.GetNext(module)) {
-		if (module->module->info.supports_device(node) > 0) {
-			if (module->module->info.register_device(node) == B_OK)
-				return true;
-		}
-	}
-
-	return false;
-}
-
-
 status_t
 arch_int_init_post_device_manager(struct kernel_args *args)
 {
@@ -714,67 +558,28 @@ arch_int_init_post_device_manager(struct kernel_args *args)
 	// INTERRUPT_TYPE_IRQ vectors), but the per-interrupt load accounting in
 	// update_int_load() unconditionally does atomic_add(&assigned_cpu->load,
 	// ...) - a NULL deref (fault at 0x14, load's offset within irq_assignment)
-	// the moment a vector accrues measurable load. Rare/fast IRQs (ATA) never
-	// tripped it; a constantly-polling source (VIA-CUDA ADB autopoll) does
-	// immediately. Reserve the whole vector space as IRQ up front, exactly like
-	// the arm and riscv64 ports do in their controller init, so assigned_cpu is
-	// always valid. arch_int_assign_to_cpu() is a no-op on ppc, so the
-	// IRQ-balancing path this enables in install_io_interrupt_handler() simply
-	// pins every vector to CPU 0.
+	// the moment a vector accrues measurable load. Reserve the whole vector
+	// space as IRQ up front, exactly like the arm and riscv64 ports do in
+	// their controller init, so assigned_cpu is always valid.
+	// arch_int_assign_to_cpu() is a no-op on ppc, so the IRQ-balancing path
+	// this enables in install_io_interrupt_handler() simply pins every vector
+	// to CPU 0.
 	reserve_io_interrupt_vectors(NUM_IO_VECTORS, 0, INTERRUPT_TYPE_IRQ);
 
-	// get the interrupt controller driver modules
-	PICModuleList picModules;
-	get_interrupt_controller_modules(picModules);
-	if (picModules.IsEmpty()) {
-		panic("arch_int_init_post_device_manager(): Found no PIC modules!");
-		return B_ENTRY_NOT_FOUND;
-	}
-
-	// get the device manager module
-	device_manager_info *deviceManager;
-	status_t error = get_module(B_DEVICE_MANAGER_MODULE_NAME,
-		(module_info**)&deviceManager);
+	// Hollywood's interrupt controller hangs off no bus the device manager can
+	// walk, so the platform hands it over directly rather than being probed
+	// the way the Mac's PCI OpenPIC used to be.
+	status_t error = wii_pic_init();
 	if (error != B_OK) {
-		panic("arch_int_init_post_device_manager(): Failed to get device "
-			"manager: %s", strerror(error));
+		panic("arch_int_init_post_device_manager(): Failed to initialize the "
+			"Wii interrupt controller: %s", strerror(error));
 		return error;
 	}
-	Module<device_manager_info> _deviceManager(deviceManager);	// auto put
 
-	// iterate through the device tree and probe the interrupt controllers
-	DeviceTreeIterator iterator(deviceManager);
-	while (device_node *node = iterator.Next())
-		probe_pic_device(node, picModules);
+	sPIC = wii_pic_module();
+	sPICCookie = NULL;
 
-	// iterate through the tree again and get an interrupt controller node
-	iterator.Rewind();
-	while (device_node *node = iterator.Next()) {
-		uint16 pciBaseClass, pciSubType;
-		if (deviceManager->get_attr_uint16(node, B_DEVICE_TYPE,
-				&pciBaseClass, false) == B_OK &&
-			deviceManager->get_attr_uint16(node, B_DEVICE_SUB_TYPE,
-				&pciSubType, false) == B_OK) {
-			bool isPIC = (pciBaseClass == PCI_base_peripheral)
-				&& (pciSubType == PCI_pic);
-
-			if (isPIC) {
-				driver_module_info *driver;
-				void *driverCookie;
-
-				deviceManager->get_driver(node, (driver_module_info **)&driver, (void **)&driverCookie);
-
-				sPIC = (interrupt_controller_module_info *)driver;
-				sPICCookie = driverCookie;
-				return B_OK;
-			}
-		}
-	}
-
-	// no PIC found
-	panic("arch_int_init_post_device_manager(): Found no supported PIC!");
-
-	return B_ENTRY_NOT_FOUND;
+	return B_OK;
 }
 
 

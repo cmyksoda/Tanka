@@ -1,0 +1,10 @@
+SubDir HAIKU_TOP src system kernel platform wii ;
+
+SubDirCcFlags $(TARGET_KERNEL_PIC_CCFLAGS) ;
+SubDirC++Flags $(TARGET_KERNEL_PIC_CCFLAGS) ;
+
+KernelMergeObject kernel_platform_wii.o :
+	wii_platform.cpp
+	wii_pic.cpp
+	wii_exi.cpp
+;
