@@ -130,7 +130,7 @@ wii_pic_acknowledge_io_interrupt(void *cookie)
 		uint32 hollywood = *hw_reg(WII_HW_PPCIRQFLAG)
 			& *hw_reg(WII_HW_PPCIRQMASK);
 		if (hollywood != 0) {
-			int irq = 31 - __builtin_clz(hollywood);
+			int irq = __builtin_ctz(hollywood);
 			*hw_reg(WII_HW_PPCIRQFLAG) = 1 << irq;
 			eieio();
 			return WII_IRQ_HOLLYWOOD_BASE + irq;
@@ -144,7 +144,7 @@ wii_pic_acknowledge_io_interrupt(void *cookie)
 	}
 
 	// Flipper sources are cleared by their device's handler, not here.
-	return WII_IRQ_PI_BASE + (31 - __builtin_clz(cause));
+	return WII_IRQ_PI_BASE + __builtin_ctz(cause);
 }
 
 
