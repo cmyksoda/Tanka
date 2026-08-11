@@ -226,7 +226,7 @@ PPCWii::Init(struct kernel_args *kernelArgs)
 status_t
 PPCWii::InitSerialDebug(struct kernel_args *kernelArgs)
 {
-	return B_OK;
+	return wii_serial_debug_init();
 }
 
 
@@ -350,6 +350,7 @@ PPCWii::SerialDebugGetChar()
 void
 PPCWii::SerialDebugPutChar(char c)
 {
+	wii_serial_debug_put_char(c);
 }
 
 

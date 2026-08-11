@@ -13,6 +13,7 @@
 // 32 bit second counter zeroed at 2000-01-01; user-visible time is that
 // counter plus the bias word kept in SRAM, so we read the bias once and apply
 // it in both directions rather than rewriting (and re-checksumming) SRAM.
+// EXI channel 1 device 0 is the USB Gecko the debug console writes to.
 
 #define EXI_CSR				0x00
 #define EXI_CR				0x0c
@@ -20,16 +21,20 @@
 #define EXI_CHANNEL_SIZE	0x14
 
 #define EXI_CSR_CLK_8MHZ	(3 << 4)
+#define EXI_CSR_CLK_32MHZ	(5 << 4)
 #define EXI_CSR_CS(device)	(1 << (7 + (device)))
 
 #define EXI_CR_TSTART		(1 << 0)
 #define EXI_CR_READ			(0 << 2)
 #define EXI_CR_WRITE		(1 << 2)
+#define EXI_CR_READWRITE	(2 << 2)
 #define EXI_CR_LEN(bytes)	(((bytes) - 1) << 4)
 
 #define EXI_RTC_READ		0x20000000
 #define EXI_RTC_WRITE		0xa0000000
 #define EXI_SRAM_READ		0x20000100
+
+#define EXI_GECKO_CHANNEL	1
 
 #define SRAM_COUNTER_BIAS	0x0c
 
@@ -45,17 +50,17 @@ static bool sInitialized;
 
 
 static inline volatile uint32 *
-exi_reg(uint32 offset)
+exi_reg(uint32 channel, uint32 offset)
 {
-	return (volatile uint32 *)(sEXIBase + offset);
+	return (volatile uint32 *)(sEXIBase + channel * EXI_CHANNEL_SIZE + offset);
 }
 
 
 static bool
-exi_wait(void)
+exi_wait(uint32 channel)
 {
 	for (int i = 0; i < EXI_TRANSFER_TIMEOUT; i++) {
-		if ((*exi_reg(EXI_CR) & EXI_CR_TSTART) == 0)
+		if ((*exi_reg(channel, EXI_CR) & EXI_CR_TSTART) == 0)
 			return true;
 	}
 	return false;
@@ -63,20 +68,20 @@ exi_wait(void)
 
 
 static bool
-exi_imm(uint32 *data, uint32 length, uint32 direction)
+exi_imm(uint32 channel, uint32 *data, uint32 length, uint32 direction)
 {
-	if (direction == EXI_CR_WRITE)
-		*exi_reg(EXI_DATA) = *data;
+	if (direction != EXI_CR_READ)
+		*exi_reg(channel, EXI_DATA) = *data;
 
 	eieio();
-	*exi_reg(EXI_CR) = EXI_CR_TSTART | direction | EXI_CR_LEN(length);
+	*exi_reg(channel, EXI_CR) = EXI_CR_TSTART | direction | EXI_CR_LEN(length);
 	eieio();
 
-	if (!exi_wait())
+	if (!exi_wait(channel))
 		return false;
 
-	if (direction == EXI_CR_READ)
-		*data = *exi_reg(EXI_DATA);
+	if (direction != EXI_CR_WRITE)
+		*data = *exi_reg(channel, EXI_DATA);
 
 	return true;
 }
@@ -85,13 +90,13 @@ exi_imm(uint32 *data, uint32 length, uint32 direction)
 static bool
 exi_command(uint32 command, uint32 *value, uint32 direction)
 {
-	*exi_reg(EXI_CSR) = EXI_CSR_CLK_8MHZ | EXI_CSR_CS(1);
+	*exi_reg(0, EXI_CSR) = EXI_CSR_CLK_8MHZ | EXI_CSR_CS(1);
 	eieio();
 
-	bool ok = exi_imm(&command, 4, EXI_CR_WRITE)
-		&& exi_imm(value, 4, direction);
+	bool ok = exi_imm(0, &command, 4, EXI_CR_WRITE)
+		&& exi_imm(0, value, 4, direction);
 
-	*exi_reg(EXI_CSR) = 0;
+	*exi_reg(0, EXI_CSR) = 0;
 	eieio();
 
 	return ok;
@@ -112,15 +117,15 @@ wii_rtc_init(void)
 
 	// The bias sits 12 bytes into SRAM; the chip auto-increments, so step the
 	// read address word by word up to it.
-	*exi_reg(EXI_CSR) = EXI_CSR_CLK_8MHZ | EXI_CSR_CS(1);
+	*exi_reg(0, EXI_CSR) = EXI_CSR_CLK_8MHZ | EXI_CSR_CS(1);
 	eieio();
 
 	uint32 command = EXI_SRAM_READ;
-	bool ok = exi_imm(&command, 4, EXI_CR_WRITE);
+	bool ok = exi_imm(0, &command, 4, EXI_CR_WRITE);
 	for (uint32 offset = 0; ok && offset <= SRAM_COUNTER_BIAS; offset += 4)
-		ok = exi_imm(&sCounterBias, 4, EXI_CR_READ);
+		ok = exi_imm(0, &sCounterBias, 4, EXI_CR_READ);
 
-	*exi_reg(EXI_CSR) = 0;
+	*exi_reg(0, EXI_CSR) = 0;
 	eieio();
 
 	if (!ok) {
@@ -161,4 +166,54 @@ wii_rtc_set(uint32 seconds)
 	uint32 counter = seconds - WII_RTC_EPOCH_OFFSET - sCounterBias;
 	if (!exi_command(EXI_RTC_WRITE, &counter, EXI_CR_WRITE))
 		dprintf("wii_rtc_set(): RTC write failed\n");
+}
+
+
+// #pragma mark - USB Gecko debug console
+
+
+/*!	TX is the 16 bit command 0xB000 with the byte in bits 4-11; bit 26 of the
+	reply is set once the adapter's FIFO has accepted the byte.
+*/
+static bool
+usbgecko_send_byte(char c)
+{
+	uint32 data = (uint32)(0xB000 | ((uint8)c << 4)) << 16;
+
+	*exi_reg(EXI_GECKO_CHANNEL, EXI_CSR)
+		= EXI_CSR_CLK_32MHZ | EXI_CSR_CS(0);
+	eieio();
+
+	bool ok = exi_imm(EXI_GECKO_CHANNEL, &data, 2, EXI_CR_READWRITE);
+
+	*exi_reg(EXI_GECKO_CHANNEL, EXI_CSR) = 0;
+	eieio();
+
+	return ok && (data & 0x04000000) != 0;
+}
+
+
+status_t
+wii_serial_debug_init(void)
+{
+	// Runs long before the VM can map the register area; until then the
+	// device window the loader left mapped keeps the EXI block reachable.
+	if (sEXIBase == 0)
+		sEXIBase = 0xc0000000 + WII_HOLLYWOOD_PHYS_BASE + WII_HW_EXI;
+
+	return B_OK;
+}
+
+
+void
+wii_serial_debug_put_char(char c)
+{
+	if (sEXIBase == 0)
+		return;
+
+	// Bounded retry: the adapter's FIFO drains at USB pace mid-burst.
+	for (int i = 0; i < 10000; i++) {
+		if (usbgecko_send_byte(c))
+			break;
+	}
 }
