@@ -5,9 +5,11 @@
 
 #include <boot/platform.h>
 #include <boot/addr_range.h>
+#include <boot/kernel_args.h>
 #include <boot/stage2.h>
 #include <boot/stdio.h>
 #include <arch/cpu.h>
+#include <arch_cpu.h>
 #include <arch_mmu.h>
 #include <kernel.h>
 #include <string.h>
@@ -15,6 +17,10 @@
 #include <gccore.h>
 
 #include "mmu.h"
+
+
+extern "C" void* arch_mmu_allocate(void* virtualAddress, size_t size,
+	uint8 protection, bool exactAddress);
 
 
 //#define TRACE_MMU
@@ -34,6 +40,19 @@
 #define LIBOGC_MEM1_RESERVE	(4 * 1024 * 1024)
 #define LIBOGC_MEM2_RESERVE	(8 * 1024 * 1024)
 
+// WIMGxxPP, the low byte of a PTE: 10 is read/write for either protection key
+#define PAGE_READ_WRITE		0x02
+// cache inhibited and guarded, the WIMG libogc's uncached BATs used
+#define PAGE_DEVICE			0x2a
+
+// Hollywood's registers, the only physical device range libogc touches
+#define DEVICE_BASE		0x0c000000
+#define DEVICE_SIZE		0x01800000
+
+// a kernel window onto the PPC exception vectors at physical zero
+#define EXCEPTION_HANDLERS_BASE	0xa0000000
+#define EXCEPTION_HANDLERS_SIZE	0x4000
+
 
 struct memory_pool {
 	addr_t	next;
@@ -45,6 +64,9 @@ static memory_pool sMem2Pool;
 
 static wii_address_mapping sMappings[128];
 static uint32 sMappingCount;
+
+static page_table_entry_group *sPageTable;
+static uint32 sPageTableHashMask;
 
 
 //! Loader addresses are libogc's BAT windows: MEM1 at 0x80000000, MEM2 at
@@ -126,6 +148,85 @@ add_mapping(addr_t kernelAddress, addr_t physical, size_t size,
 }
 
 
+static void
+fill_page_table_entry(page_table_entry *entry, uint32 virtualSegmentID,
+	addr_t virtualAddress, addr_t physicalAddress, uint8 mode,
+	bool secondaryHash)
+{
+	((uint32 *)entry)[1] = ((physicalAddress / B_PAGE_SIZE) << 12) | mode;
+	eieio();
+		// the low word has to have landed before the entry becomes valid
+
+	entry->virtual_segment_id = virtualSegmentID;
+	entry->secondary_hash = secondaryHash;
+	entry->abbr_page_index = (virtualAddress >> 22) & 0x3f;
+	entry->valid = true;
+}
+
+
+//! The segment registers get VSID == segment number, so the VSID is implied.
+static void
+map_page(addr_t virtualAddress, addr_t physicalAddress, uint8 mode)
+{
+	uint32 virtualSegmentID = virtualAddress >> 28;
+
+	uint32 hash = page_table_entry::PrimaryHash(virtualSegmentID,
+		(uint32)virtualAddress);
+	page_table_entry_group *group = &sPageTable[hash & sPageTableHashMask];
+
+	for (int32 i = 0; i < 8; i++) {
+		if (group->entry[i].valid)
+			continue;
+
+		fill_page_table_entry(&group->entry[i], virtualSegmentID,
+			virtualAddress, physicalAddress, mode, false);
+		return;
+	}
+
+	group = &sPageTable[page_table_entry::SecondaryHash(hash)
+		& sPageTableHashMask];
+
+	for (int32 i = 0; i < 8; i++) {
+		if (group->entry[i].valid)
+			continue;
+
+		fill_page_table_entry(&group->entry[i], virtualSegmentID,
+			virtualAddress, physicalAddress, mode, true);
+		return;
+	}
+
+	panic("mmu: no free page table entry for %p\n", (void *)virtualAddress);
+}
+
+
+static void
+map_range(addr_t virtualAddress, addr_t physicalAddress, size_t size,
+	uint8 mode)
+{
+	for (size_t offset = 0; offset < size; offset += B_PAGE_SIZE)
+		map_page(virtualAddress + offset, physicalAddress + offset, mode);
+}
+
+
+//! Kept identical to the OpenFirmware loader's: RAM/32, so a busy desktop
+//! does not overflow an individual PTEG, which the kernel panics on.
+static size_t
+suggested_page_table_size(size_t total)
+{
+	uint32 max = 23;
+		// 2^23 == 8 MB
+
+	while (max < 32) {
+		if (total <= (1UL << max))
+			break;
+
+		max++;
+	}
+
+	return 1UL << (max - 5);
+}
+
+
 extern "C" status_t
 boot_arch_mmu_init(void)
 {
@@ -169,53 +270,190 @@ boot_arch_mmu_init(void)
 		(void *)sMem1Pool.next, (void *)sMem1Pool.end,
 		(void *)sMem2Pool.next, (void *)sMem2Pool.end);
 
+	// the kernel gets its own stack; nothing else sets cpu_kstack up for us
+	size_t stackSize = KERNEL_STACK_SIZE
+		+ KERNEL_STACK_GUARD_PAGES * B_PAGE_SIZE;
+	void *stack = arch_mmu_allocate(NULL, stackSize,
+		B_READ_AREA | B_WRITE_AREA, false);
+	if (stack == NULL)
+		return B_NO_MEMORY;
+
+	gKernelArgs.cpu_kstack[0].start = (addr_t)stack;
+	gKernelArgs.cpu_kstack[0].size = stackSize;
+
+	dprintf("mmu: kernel stack %p - %p\n", stack,
+		(void *)((addr_t)stack + stackSize));
+
 	return B_OK;
 }
 
 
+/*!	Allocates \a size bytes and gives them the same kernel address the loader
+	sees them at, which is the invariant the rest of the loader is built on -
+	arch_elf.cpp writes relocations straight through kernel addresses, so an
+	image placed anywhere else has its PLT and GOT patched into thin air.
+
+	\a virtualAddress is therefore only read as "this is the kernel image",
+	which earns it MEM1; its value is deliberately ignored, and the image is
+	relocatable (ET_DYN) precisely so it can be placed elsewhere.
+*/
 extern "C" void*
 arch_mmu_allocate(void* virtualAddress, size_t size, uint8 protection,
 	bool exactAddress)
 {
-	size = ROUNDUP(size, B_PAGE_SIZE);
-
-	// a requested address is a kernel address: only the kernel image needs one
-	addr_t kernelAddress = (addr_t)virtualAddress;
-	bool wantsExact = kernelAddress != 0;
-
-	if (wantsExact && is_address_range_covered(
-			gKernelArgs.virtual_allocated_range,
-			gKernelArgs.num_virtual_allocated_ranges, kernelAddress, 1)) {
-		if (exactAddress) {
-			dprintf("mmu: %p is not available\n", virtualAddress);
-			return NULL;
-		}
-		wantsExact = false;
+	if (exactAddress) {
+		dprintf("mmu: cannot place anything at a fixed address (%p)\n",
+			virtualAddress);
+		return NULL;
 	}
 
-	addr_t physical = wii_allocate_physical(size, B_PAGE_SIZE, wantsExact);
+	size = ROUNDUP(size, B_PAGE_SIZE);
+
+	addr_t physical = wii_allocate_physical(size, B_PAGE_SIZE,
+		virtualAddress != NULL);
 	if (physical == 0) {
 		dprintf("mmu: out of memory allocating %" B_PRIuSIZE " bytes\n", size);
 		return NULL;
 	}
 
-	addr_t loaderAddress = wii_physical_to_loader(physical);
-	if (!wantsExact)
-		kernelAddress = loaderAddress;
+	addr_t address = wii_physical_to_loader(physical);
 
-	if (add_mapping(kernelAddress, physical, size, protection) != B_OK)
+	if (add_mapping(address, physical, size, protection) != B_OK)
 		return NULL;
 
-	if (insert_virtual_allocated_range(kernelAddress, size) != B_OK) {
+	if (insert_virtual_allocated_range(address, size) != B_OK) {
 		dprintf("mmu: out of virtual allocated ranges\n");
 		return NULL;
 	}
 
-	TRACE("mmu: alloc %" B_PRIuSIZE " bytes: kernel %p, physical %p, "
-		"loader %p\n", size, (void *)kernelAddress, (void *)physical,
-		(void *)loaderAddress);
+	TRACE("mmu: alloc %" B_PRIuSIZE " bytes at %p (physical %p)\n", size,
+		(void *)address, (void *)physical);
 
-	return (void *)loaderAddress;
+	return (void *)address;
+}
+
+
+/*!	Builds the page table the kernel will inherit, maps everything the loader
+	promised it, and copies \a gKernelArgs somewhere that survives the switch.
+
+	Returns the kernel's address for the copy in \a _kernelArgs and the SDR1
+	value \a arch_start_kernel has to install in \a _sdr1.
+*/
+status_t
+wii_mmu_prepare_handoff(kernel_args** _kernelArgs, uint32* _sdr1)
+{
+	// the loader's own BSS is gone once the BATs are, so kernel_args moves
+	kernel_args* args = (kernel_args*)kernel_args_malloc(sizeof(kernel_args),
+		sizeof(void*));
+	if (args == NULL) {
+		dprintf("mmu: no room for the kernel_args copy\n");
+		return B_NO_MEMORY;
+	}
+
+	size_t tableSize = suggested_page_table_size(MEM1_SIZE + MEM2_SIZE);
+	addr_t tablePhysical = wii_allocate_physical(tableSize, tableSize, false);
+	if (tablePhysical == 0) {
+		dprintf("mmu: could not allocate a %" B_PRIuSIZE " byte page table\n",
+			tableSize);
+		return B_NO_MEMORY;
+	}
+
+	addr_t tableAddress = wii_physical_to_loader(tablePhysical);
+	sPageTable = (page_table_entry_group*)tableAddress;
+	sPageTableHashMask = tableSize / sizeof(page_table_entry_group) - 1;
+	memset(sPageTable, 0, tableSize);
+
+	// the kernel reaches its own page table through the address space, so the
+	// table has to be mapped like any other allocation
+	if (add_mapping(tableAddress, tablePhysical, tableSize,
+			B_READ_AREA | B_WRITE_AREA) != B_OK
+		|| insert_virtual_allocated_range(tableAddress, tableSize) != B_OK) {
+		return B_NO_MEMORY;
+	}
+
+	gKernelArgs.arch_args.page_table.start = tableAddress;
+	gKernelArgs.arch_args.page_table.size = tableSize;
+
+	// libogc and the loader keep their addresses across the switch, the way
+	// the OpenFirmware loader keeps the firmware's: the kernel takes
+	// exceptions long before it installs its own vectors, and the vectors at
+	// physical zero branch straight back into libogc's handlers. This has to
+	// go in before the alias below, so address lookups find it first.
+	if (add_mapping(wii_physical_to_loader(MEM1_BASE), MEM1_BASE,
+			sMem1Pool.next - MEM1_BASE, B_READ_AREA | B_WRITE_AREA) != B_OK
+		|| insert_virtual_allocated_range(wii_physical_to_loader(MEM1_BASE),
+			sMem1Pool.next - MEM1_BASE) != B_OK
+		|| add_mapping(wii_physical_to_loader(MEM2_BASE), MEM2_BASE,
+			sMem2Pool.next - MEM2_BASE, B_READ_AREA | B_WRITE_AREA) != B_OK
+		|| insert_virtual_allocated_range(wii_physical_to_loader(MEM2_BASE),
+			sMem2Pool.next - MEM2_BASE) != B_OK) {
+		return B_NO_MEMORY;
+	}
+
+	// a second window onto the hardware vectors at physical zero, which the
+	// kernel overwrites with its own once the VM is up
+	if (add_mapping(EXCEPTION_HANDLERS_BASE, 0, EXCEPTION_HANDLERS_SIZE,
+			B_READ_AREA | B_WRITE_AREA) != B_OK
+		|| insert_virtual_allocated_range(EXCEPTION_HANDLERS_BASE,
+			EXCEPTION_HANDLERS_SIZE) != B_OK) {
+		return B_NO_MEMORY;
+	}
+
+	gKernelArgs.arch_args.exception_handlers.start = EXCEPTION_HANDLERS_BASE;
+	gKernelArgs.arch_args.exception_handlers.size = EXCEPTION_HANDLERS_SIZE;
+
+	dprintf("mmu: page table %p (physical %p), %" B_PRIuSIZE " bytes\n",
+		(void *)tableAddress, (void *)tablePhysical, tableSize);
+
+	// everything arch_mmu_allocate() handed out, plus the two entries above
+	uint32 mappingCount = sMappingCount;
+	for (uint32 i = 0; i < mappingCount; i++) {
+		// protections are left wide open; the kernel's VM sets the real ones
+		map_range(sMappings[i].kernel, sMappings[i].physical,
+			sMappings[i].size, PAGE_READ_WRITE);
+
+		TRACE("mmu: mapped %p -> %p, %" B_PRIuSIZE " bytes\n",
+			(void *)sMappings[i].kernel, (void *)sMappings[i].physical,
+			sMappings[i].size);
+	}
+
+	// the uncached aliases and the register block arch_mmu_map_device() hands
+	// out, which were BAT windows until a moment ago
+	map_range(0xc0000000, MEM1_BASE, MEM1_SIZE, PAGE_DEVICE);
+	map_range(0xc0000000 + DEVICE_BASE, DEVICE_BASE, DEVICE_SIZE, PAGE_DEVICE);
+	map_range(0xd0000000, MEM2_BASE, MEM2_SIZE, PAGE_DEVICE);
+
+	if (insert_virtual_allocated_range(0xc0000000, MEM1_SIZE) != B_OK
+		|| insert_virtual_allocated_range(0xc0000000 + DEVICE_BASE,
+			DEVICE_SIZE) != B_OK
+		|| insert_virtual_allocated_range(0xd0000000, MEM2_SIZE) != B_OK) {
+		return B_NO_MEMORY;
+	}
+
+	memcpy((void *)args, (const void *)&gKernelArgs, sizeof(kernel_args));
+
+	// the kernel starts executing out of pages the loader only ever wrote to
+	for (uint32 i = 0; i < mappingCount; i++) {
+		void* address = (void *)wii_physical_to_loader(sMappings[i].physical);
+		DCFlushRange(address, sMappings[i].size);
+		ICInvalidateRange(address, sMappings[i].size);
+	}
+
+	addr_t argsAddress;
+	platform_bootloader_address_to_kernel_address(args, &argsAddress);
+
+	*_kernelArgs = (kernel_args*)argsAddress;
+	*_sdr1 = (tablePhysical & 0xffff0000) | (((tableSize - 1) >> 16) & 0x1ff);
+
+	return B_OK;
+}
+
+
+//! Called from arch_start_kernel() with the kernel's page table already live.
+extern "C" void
+wii_mmu_translation_on(void)
+{
+	dprintf("mmu: translation is on, the loader is still here\n");
 }
 
 

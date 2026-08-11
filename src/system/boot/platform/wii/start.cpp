@@ -18,6 +18,7 @@
 
 #include "console.h"
 #include "debug.h"
+#include "mmu.h"
 
 
 // libogc's crt0 sequence, none of it declared in a public header
@@ -29,7 +30,7 @@ extern "C" void SYS_PreMain(void);
 extern "C" void wii_start(void);
 extern "C" int main(stage2_args *args);
 extern "C" status_t arch_start_kernel(struct kernel_args *kernelArgs,
-		addr_t kernelEntry, addr_t kernelStackTop);
+		addr_t kernelEntry, addr_t kernelStackTop, uint32 sdr1);
 extern "C" status_t boot_arch_mmu_init(void);
 
 extern void (*__ctor_list)(void);
@@ -73,12 +74,24 @@ platform_start_kernel(void)
 	dprintf("kernel entry at %p\n", (void*)kernelEntry);
 	dprintf("kernel stack top: %p\n", (void*)stackTop);
 
+	// the kernel's first stack frame, written while the BATs still reach it
+	memset((void*)(stackTop - 16), 0, 16);
+
+	kernel_args *kernelArgs = &gKernelArgs;
+	uint32 sdr1 = 0;
+	if (wii_mmu_prepare_handoff(&kernelArgs, &sdr1) != B_OK)
+		panic("could not build the kernel's page table\n");
+
 	// the kernel takes over the exception vectors, so silence libogc's first
 	uint32_t cookie;
 	_CPU_ISR_Disable(cookie);
 	(void)cookie;
 
-	status_t error = arch_start_kernel(&gKernelArgs, kernelEntry, stackTop);
+	dprintf("entering the kernel: args %p, sdr1 %p\n", kernelArgs,
+		(void*)sdr1);
+
+	status_t error = arch_start_kernel(kernelArgs, kernelEntry, stackTop,
+		sdr1);
 
 	panic("Kernel returned! Return value: %" B_PRId32 "\n", error);
 }

@@ -19,6 +19,9 @@
 // write the anyboot image directly to the SD card, bypassing FAT32!
 // Later, we can add a FAT32 parser to find tanka.img.
 
+static const size_t kSectorSize = 512;
+
+
 class WiiSDBootDevice : public Node {
 public:
 	WiiSDBootDevice();
@@ -33,6 +36,11 @@ private:
 	bool fInitialized;
 	off_t fSize;
 };
+
+
+// Not a member: over-aligning one makes GCC want the aligned operator new,
+// which drags libsupc++'s verbose terminate handler into the loader.
+static uint8 sSectorBuffer[kSectorSize] __attribute__((aligned(32)));
 
 
 WiiSDBootDevice::WiiSDBootDevice()
@@ -68,14 +76,39 @@ WiiSDBootDevice::ReadAt(void *cookie, off_t pos, void *buffer, size_t bufferSize
 	if (!fInitialized)
 		return B_NO_INIT;
 
-	// pos and bufferSize must be sector aligned (512 bytes)
-	sec_t startSector = pos / 512;
-	sec_t numSectors = bufferSize / 512;
+	if (pos < 0)
+		return B_BAD_VALUE;
 
-	if (__io_wiisd.readSectors(startSector, numSectors, buffer))
-		return bufferSize;
+	// The partition scanners read single fields, not sectors, so anything that
+	// is not whole-sector aligned has to go through a bounce buffer.
+	uint8 *out = (uint8 *)buffer;
+	size_t remaining = bufferSize;
 
-	return B_IO_ERROR;
+	while (remaining > 0) {
+		sec_t sector = pos / kSectorSize;
+		size_t offset = pos % kSectorSize;
+		size_t chunk;
+
+		if (offset == 0 && remaining >= kSectorSize) {
+			sec_t count = remaining / kSectorSize;
+			if (!__io_wiisd.readSectors(sector, count, out))
+				return B_IO_ERROR;
+			chunk = count * kSectorSize;
+		} else {
+			if (!__io_wiisd.readSectors(sector, 1, sSectorBuffer))
+				return B_IO_ERROR;
+			chunk = kSectorSize - offset;
+			if (chunk > remaining)
+				chunk = remaining;
+			memcpy(out, sSectorBuffer + offset, chunk);
+		}
+
+		out += chunk;
+		pos += chunk;
+		remaining -= chunk;
+	}
+
+	return bufferSize;
 }
 
 

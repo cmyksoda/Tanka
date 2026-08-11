@@ -29,6 +29,12 @@ local platform_src =
 local kernel_src =
 ;
 
+# the page table hash the loader and the kernel have to agree on
+local kernel_arch_src =
+	arch_mmu.cpp
+	arch_cpu_asm.S
+;
+
 local platform ;
 for platform in [ MultiBootSubDirSetup wii ] {
 	on $(platform) {
@@ -36,6 +42,7 @@ for platform in [ MultiBootSubDirSetup wii ] {
 
 			$(platform_src)
 			$(kernel_src)
+			$(kernel_arch_src)
 		:
 		:
 			boot_platform_generic_wii.a
@@ -43,5 +50,9 @@ for platform in [ MultiBootSubDirSetup wii ] {
 
 		SEARCH on [ FGristFiles $(kernel_src) ]
 			= [ FDirName $(HAIKU_TOP) src system kernel platform wii ] ;
+
+		SEARCH on [ FGristFiles $(kernel_arch_src) ]
+			= [ FDirName $(HAIKU_TOP) src system kernel arch
+				$(TARGET_KERNEL_ARCH_DIR) ] ;
 	}
 }
