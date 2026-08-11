@@ -6,14 +6,24 @@ on:
   pull_request:
     branches: [ "master", "main", "powerpc" ]
 
+# A push supersedes whatever is still running for the same branch.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Pinned so the cross-tools cache stays valid and upstream buildtools churn
+  # cannot break a build that worked yesterday.
+  BUILDTOOLS_REV: bfa561e3708c0e2d0155fb403b988ba515c9b16d
+
 jobs:
   build:
     runs-on: ubuntu-latest
     container: devkitpro/devkitppc:latest
 
     steps:
-    - uses: actions/checkout@v3
-    
+    - uses: actions/checkout@v4
+
     - name: Install Haiku Dependencies
       run: |
         apt-get update
@@ -22,41 +32,62 @@ jobs:
                                 mkisofs python3 wget libzstd-dev \
                                 u-boot-tools xattr build-essential
 
+    - name: Restore Cross Tools
+      id: cross-tools
+      uses: actions/cache/restore@v4
+      with:
+        path: generated.ppc/cross-tools-ppc
+        key: cross-tools-ppc-${{ env.BUILDTOOLS_REV }}-${{ hashFiles('build/scripts/build_cross_tools*', 'configure') }}
+
     - name: Download Buildtools
       run: |
+        git config --global --add safe.directory '*'
         cd ..
-        git clone https://review.haiku-os.org/buildtools.git
-        cd buildtools/jam
+        git clone --filter=blob:none https://review.haiku-os.org/buildtools.git
+        cd buildtools
+        git checkout $BUILDTOOLS_REV
+        cd jam
         make
         ./jam0 install
 
     - name: Configure Haiku for PowerPC
       run: |
-        git config --global --add safe.directory '*'
-        mkdir -p /work
         mkdir -p generated.ppc
         cd generated.ppc
-        ../configure --cross-tools-source ../../buildtools --build-cross-tools ppc
+        if [ -x cross-tools-ppc/bin/powerpc-apple-haiku-gcc ]; then
+          ../configure --cross-tools-prefix "$PWD/cross-tools-ppc/bin/powerpc-apple-haiku-"
+        else
+          ../configure --cross-tools-source ../../buildtools --build-cross-tools ppc -j$(nproc)
+        fi
+
+    # Saved before the build steps so a failing build still leaves a usable
+    # toolchain behind for the next run.
+    - name: Save Cross Tools
+      if: steps.cross-tools.outputs.cache-hit != 'true'
+      uses: actions/cache/save@v4
+      with:
+        path: generated.ppc/cross-tools-ppc
+        key: cross-tools-ppc-${{ env.BUILDTOOLS_REV }}-${{ hashFiles('build/scripts/build_cross_tools*', 'configure') }}
 
     - name: Build Wii Bootloader
       run: |
         cd generated.ppc
-        HAIKU_REVISION=hrev1 jam -q haiku_loader.wii
+        HAIKU_REVISION=hrev1 jam -q -j$(nproc) haiku_loader.wii
 
     - name: Build Drivers
       run: |
         cd generated.ppc
-        HAIKU_REVISION=hrev1 jam -q sdhci wii_audio
+        HAIKU_REVISION=hrev1 jam -q -j$(nproc) sdhci wii_audio
 
     - name: Build 4GB Haiku Root Image
       run: |
         cd generated.ppc
-        HAIKU_REVISION=hrev1 jam -q -sHAIKU_IMAGE_SIZE=4096 @nightly-raw
+        HAIKU_REVISION=hrev1 jam -q -j$(nproc) -sHAIKU_IMAGE_SIZE=4096 @nightly-raw
 
     - name: Convert Bootloader to DOL and Package Release
       run: |
         cd generated.ppc
-        elf2dol objects/haiku/powerpc/release/system/boot/haiku_loader.wii boot.dol
+        elf2dol objects/haiku/ppc/release/system/boot/wii/haiku_loader.wii boot.dol
         ../wii-install-scripts/package_wii_release.sh boot.dol haiku-nightly.image
 
     - name: Upload Wii Release Artifact
@@ -64,4 +95,3 @@ jobs:
       with:
         name: haiku-wii-release
         path: generated.ppc/Haiku-PowerPCii/
-

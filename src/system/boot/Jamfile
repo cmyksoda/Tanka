@@ -493,4 +493,3 @@ SubInclude HAIKU_TOP src system boot arch $(TARGET_KERNEL_ARCH_DIR) ;
 SubInclude HAIKU_TOP src system boot libs ;
 SubInclude HAIKU_TOP src system boot loader ;
 SubInclude HAIKU_TOP src system boot platform ;
-echo HAIKU_BOOT_WII_LIBS is $(HAIKU_BOOT_WII_LIBS) ;
