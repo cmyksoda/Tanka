@@ -552,7 +552,7 @@ void export_raw_audio_attr(
 	if(f.channel_count != w.channel_count)
 		context.writeAttr(gKey_channel_count, f.channel_count);
 	if(f.buffer_size != w.buffer_size)
-		context.writeAttr(gKey_buffer_size, f.buffer_size);
+		context.writeAttr(gKey_buffer_size, (uint32)f.buffer_size);
 
 	switch(f.format) {
 		case media_raw_audio_format::B_AUDIO_UCHAR:
@@ -827,7 +827,7 @@ void export_encoded_audio_attr(
 		context.writeAttr(gKey_bit_rate, f.bit_rate);
 
 	if(f.frame_size != w.frame_size)
-		context.writeAttr(gKey_frame_size, f.frame_size);
+		context.writeAttr(gKey_frame_size, (uint32)f.frame_size);
 }
 
 void export_encoded_audio_content(
@@ -863,7 +863,7 @@ void export_encoded_video_attr(
 	if(f.max_bit_rate != w.max_bit_rate)
 		context.writeAttr(gKey_max_bit_rate, f.max_bit_rate);
 	if(f.frame_size != w.frame_size)
-		context.writeAttr(gKey_frame_size, f.frame_size);
+		context.writeAttr(gKey_frame_size, (uint32)f.frame_size);
 	if(f.forward_history != w.forward_history)
 		context.writeAttr(gKey_forward_history, (int32)f.forward_history);
 	if(f.backward_history != w.backward_history)

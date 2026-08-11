@@ -404,8 +404,11 @@ vm_page::DecrementWiredCount()
 		// (leak the page, as the VMCache::Delete workaround already does).
 		static int32 sPPCWiredUnderflow = 0;
 		if (atomic_add(&sPPCWiredUnderflow, 1) == 0) {
+#ifdef _KERNEL_MODE
+			// userlandfs builds this header against POSIX dprintf().
 			dprintf("vm_page::DecrementWiredCount: ppc wired-count underflow; "
 				"skipping to avoid a kernel panic. Counted silently after this.\n");
+#endif
 		}
 		return;
 	}

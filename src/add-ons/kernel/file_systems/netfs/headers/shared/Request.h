@@ -131,6 +131,17 @@ public:
 									RequestMember& subMember) = 0;
 	virtual	void				Visit(RequestMember* member,
 									FlattenableRequestMember& subMember) = 0;
+
+#if __HAIKU_ARCH_BITS == 32 && !defined(__HAIKU_BEOS_COMPATIBLE_TYPES)
+	// Here long is neither int32 (int) nor int64 (long long), so the intptr_t
+	// request members need an entry point of their own. It is layout
+	// identical to int32 on these targets.
+			void				Visit(RequestMember* member, long& data)
+									{ Visit(member, (int32&)data); }
+			void				Visit(RequestMember* member,
+									unsigned long& data)
+									{ Visit(member, (uint32&)data); }
+#endif
 };
 
 #endif	// NET_FS_REQUEST_H
