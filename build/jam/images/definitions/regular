@@ -43,7 +43,7 @@ SYSTEM_APPS += [ FFilterByBuildFeatures
 	Mail
 	MediaConverter
 	MediaPlayer
-	MidiPlayer
+	MidiPlayer@fluidlite
 	People
 	PoorMan
 	PowerStatus
@@ -54,7 +54,7 @@ SYSTEM_APPS += [ FFilterByBuildFeatures
 	SoundRecorder
 ] ;
 
-DESKBAR_APPLICATIONS +=
+DESKBAR_APPLICATIONS += [ FFilterByBuildFeatures
 	ActivityMonitor
 	CodyCam
 	HaikuDepot
@@ -63,13 +63,13 @@ DESKBAR_APPLICATIONS +=
 	Mail
 	MediaConverter
 	MediaPlayer
-	MidiPlayer
+	MidiPlayer@fluidlite
 	People
 	PoorMan
 	SerialConnect
 	SoftwareUpdater
 	SoundRecorder
-;
+] ;
 
 DESKBAR_DESKTOP_APPLETS +=
 	AutoRaise

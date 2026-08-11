@@ -6,34 +6,38 @@ UsePrivateHeaders midi ;
 local architectureObject ;
 for architectureObject in [ MultiArchSubDirSetup ] {
 	on $(architectureObject) {
-		if ! [ FIsBuildFeatureEnabled fluidlite ] {
-			continue ;
-		}
-
-		UseBuildFeatureHeaders fluidlite ;
-		Includes [ FGristFiles MidiSynth.cpp MidiSynthFile.cpp
-			SoftSynth.cpp Synth.cpp ]
-			: [ BuildFeatureAttribute fluidlite : headers ] ;
-
-		SharedLibrary [ MultiArchDefaultGristFiles libmidi.so ] :
+		local sources =
 			Midi.cpp
 			MidiGlue.cpp
 			MidiPort.cpp
 			MidiSettings.cpp
 			MidiStore.cpp
-			MidiSynth.cpp
-			MidiSynthFile.cpp
 			MidiText.cpp
-			Samples.cpp
-			SoftSynth.cpp
-			Synth.cpp
+			;
+		local libraries = be midi2 media ;
+
+		# Only the synthesizer half of the kit is fluidlite-backed. On
+		# architectures without that package the rest still builds, so
+		# everything that just wants MIDI settings or a MIDI port - the Media
+		# preferences among them - keeps linking.
+		if [ FIsBuildFeatureEnabled fluidlite ] {
+			UseBuildFeatureHeaders fluidlite ;
+			Includes [ FGristFiles MidiSynth.cpp MidiSynthFile.cpp
+				SoftSynth.cpp Synth.cpp ]
+				: [ BuildFeatureAttribute fluidlite : headers ] ;
+
+			sources += MidiSynth.cpp MidiSynthFile.cpp Samples.cpp
+				SoftSynth.cpp Synth.cpp ;
+			libraries += [ BuildFeatureAttribute libvorbis : library ]
+				[ BuildFeatureAttribute fluidlite : library ] ;
+		}
+
+		libraries += [ TargetLibsupc++ ] ;
+
+		SharedLibrary [ MultiArchDefaultGristFiles libmidi.so ] :
+			$(sources)
 			:
-			be
-			midi2
-			media
-			[ BuildFeatureAttribute libvorbis : library ]
-			[ BuildFeatureAttribute fluidlite : library ]
-			[ TargetLibsupc++ ]
+			$(libraries)
 			;
 	}
 }
