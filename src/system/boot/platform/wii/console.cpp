@@ -122,4 +122,12 @@ extern "C" {
 	void* _memalign_r(void*, size_t, size_t) { return NULL; }
 	void* __ppc_excpt_table[256];
 	float cosf(float x) { return 1.0f; }
+	
+	float hypotf(float x, float y) { return 0.0f; }
+	char* strncpy(char* dest, const char* src, size_t n) { return dest; }
+	void sincos(double x, double *s, double *c) { *s = 0.0; *c = 1.0; }
+	double atan2(double y, double x) { return 0.0; }
+	void* __Arena2Lo;
+	void* __Arena2Hi;
+	void* __ipcbufferLo;
 }
