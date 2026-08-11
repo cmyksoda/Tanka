@@ -350,7 +350,6 @@ AddBootModuleSymlinksToPackage
 	mmc_disk
 	nvme_disk
 	openpic@ppc
-	heathrow@ppc
 	packagefs
 	pci
 	<pci>designware@riscv64
