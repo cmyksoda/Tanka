@@ -15,6 +15,7 @@
 #include <View.h>
 #include <Message.h>
 #include <OS.h>
+#include <new>
 
 // Wiimote HID button bitmasks (standard)
 #define WIIMOTE_BUTTON_A 0x0008
@@ -23,6 +24,11 @@
 #define WIIMOTE_BUTTON_RIGHT 0x0200
 #define WIIMOTE_BUTTON_DOWN 0x0400
 #define WIIMOTE_BUTTON_UP 0x0800
+#define WIIMOTE_BUTTON_PLUS 0x1000
+#define WIIMOTE_BUTTON_2 0x0001
+#define WIIMOTE_BUTTON_1 0x0002
+#define WIIMOTE_BUTTON_MINUS 0x0010
+#define WIIMOTE_BUTTON_HOME 0x0080
 
 
 extern "C" BInputServerDevice*
@@ -36,7 +42,8 @@ WiimoteInputDevice::WiimoteInputDevice()
 	: fThread(-1),
 	  fActive(false),
 	  fDeviceFd(-1),
-	  fLastButtons(0)
+	  fLastButtons(0),
+	  fLastDpadButtons(0)
 {
 }
 
@@ -51,6 +58,10 @@ WiimoteInputDevice::~WiimoteInputDevice()
 status_t
 WiimoteInputDevice::InitCheck()
 {
+	input_device_ref deviceRef = { "Wiimote", B_POINTING_DEVICE, (void*)this };
+	input_device_ref* deviceList[2] = { &deviceRef, NULL };
+	RegisterDevices(deviceList);
+
 	return B_OK;
 }
 
@@ -167,6 +178,39 @@ WiimoteInputDevice::_PollLoop()
 				EnqueueMessage(msg);
 				fLastButtons = mouseButtons;
 			}
+			
+			struct key_map {
+				uint16 button;
+				int32 key;
+			};
+			const key_map kKeyMaps[] = {
+				{ WIIMOTE_BUTTON_UP, B_UP_ARROW },
+				{ WIIMOTE_BUTTON_DOWN, B_DOWN_ARROW },
+				{ WIIMOTE_BUTTON_LEFT, B_LEFT_ARROW },
+				{ WIIMOTE_BUTTON_RIGHT, B_RIGHT_ARROW },
+				{ WIIMOTE_BUTTON_1, B_ENTER },
+				{ WIIMOTE_BUTTON_2, B_ESCAPE },
+				{ WIIMOTE_BUTTON_PLUS, B_PAGE_UP },
+				{ WIIMOTE_BUTTON_MINUS, B_PAGE_DOWN },
+				{ WIIMOTE_BUTTON_HOME, B_HOME }
+			};
+
+			for (int i = 0; i < 9; i++) {
+				bool isDown = (buttons & kKeyMaps[i].button) != 0;
+				bool wasDown = (fLastDpadButtons & kKeyMaps[i].button) != 0;
+				
+				if (isDown != wasDown) {
+					BMessage* msg = new(std::nothrow) BMessage(isDown ? B_KEY_DOWN : B_KEY_UP);
+					if (msg != NULL) {
+						msg->AddInt64("when", system_time());
+						msg->AddInt32("key", kKeyMaps[i].key);
+						msg->AddInt32("raw_char", kKeyMaps[i].key);
+						msg->AddInt32("modifiers", 0);
+						EnqueueMessage(msg);
+					}
+				}
+			}
+			fLastDpadButtons = buttons;
 			
 			// Parse IR data from Report 0x33
 			if (bytesRead >= 18 && buffer[0] == 0x33) {
