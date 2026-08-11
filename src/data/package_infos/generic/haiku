@@ -56,13 +56,19 @@ provides {
 #endif
 }
 
+// ppc has no HaikuPorts repository beyond a small legacy set, so the optional
+// runtime requirements of a regular build cannot be resolved there.
+#if defined(HAIKU_REGULAR_BUILD) && !defined(HAIKU_PACKAGING_ARCH_ppc)
+#	define HAIKU_RESOLVABLE_REGULAR_BUILD 1
+#endif
+
 requires {
 	noto >= 2.7
-#ifdef HAIKU_REGULAR_BUILD
+#ifdef HAIKU_RESOLVABLE_REGULAR_BUILD
 	noto_sans_cjk_jp
 #endif
 
-#ifdef HAIKU_REGULAR_BUILD
+#ifdef HAIKU_RESOLVABLE_REGULAR_BUILD
 	intel_wifi_firmwares
 	ralink_wifi_firmwares
 	realtek_wifi_firmwares
@@ -70,7 +76,7 @@ requires {
 
 	coreutils
 	cmd:sh
-#ifdef HAIKU_REGULAR_BUILD
+#ifdef HAIKU_RESOLVABLE_REGULAR_BUILD
 	cmd:bunzip2
 	cmd:gunzip
 	cmd:tar
