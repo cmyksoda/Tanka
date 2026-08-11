@@ -20,7 +20,7 @@ for architectureObject in [ MultiArchSubDirSetup ] {
 # Include required packages:
 # primary architecture
 AddHaikuImageSystemPackages [ FFilterByBuildFeatures
-	bash bc freetype zlib libpng16@libpng
+	bash bc freetype zlib
 
 	!gcc2 @{
 		coreutils

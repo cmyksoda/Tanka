@@ -31,8 +31,6 @@ RemotePackageRepository HaikuPorts
 	libsolv_devel-0.3.0_haiku_2014_12_22-1
 	zlib-1.2.11-1
 	zlib_devel-1.2.11-1
-	libpng16-1.6.43-1
-	libpng16_devel-1.6.43-1
 	:
 	# source package
 	bash
