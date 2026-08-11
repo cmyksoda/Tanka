@@ -375,7 +375,7 @@ public:
 	virtual void SerialDebugPutChar(char c);
 
 	virtual void SetHardwareRTC(uint64 seconds);
-	virtual uint64 GetHardwareRTC();
+	virtual uint32 GetHardwareRTC();
 
 	virtual void ShutDown(bool reboot);
 
@@ -506,10 +506,10 @@ PPCWii::VideoThread(void* arg)
 			int v = ((128 * r_avg - 107 * g_avg - 21 * b_avg) >> 8) + 128;
 			
 			// Clamp values
-			if (y0 > 255) y0 = 255; if (y0 < 0) y0 = 0;
-			if (y1 > 255) y1 = 255; if (y1 < 0) y1 = 0;
-			if (u > 255) u = 255; if (u < 0) u = 0;
-			if (v > 255) v = 255; if (v < 0) v = 0;
+			if (y0 > 255) { y0 = 255; } else if (y0 < 0) { y0 = 0; }
+			if (y1 > 255) { y1 = 255; } else if (y1 < 0) { y1 = 0; }
+			if (u > 255) { u = 255; } else if (u < 0) { u = 0; }
+			if (v > 255) { v = 255; } else if (v < 0) { v = 0; }
 			
 			// YUYV format: Y0 U0 Y1 V0
 			dst[i*2 + 0] = y0;
@@ -550,7 +550,7 @@ PPCWii::SetHardwareRTC(uint64 seconds)
 }
 
 
-uint64
+uint32
 PPCWii::GetHardwareRTC()
 {
 	return 0;
