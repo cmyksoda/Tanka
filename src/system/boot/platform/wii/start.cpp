@@ -10,6 +10,8 @@
 #include <arch/cpu.h>
 #include <string.h>
 
+#include <arch_platform.h>
+
 #include <gccore.h>
 #include <ogcsys.h>
 #include <ogc/machine/processor.h>
@@ -121,6 +123,7 @@ boot_arch_cpu_init(void)
 	gKernelArgs.arch_args.cpu_frequency = TB_CORE_CLOCK;
 	gKernelArgs.arch_args.bus_frequency = TB_BUS_CLOCK;
 	gKernelArgs.arch_args.time_base_frequency = TB_TIMER_CLOCK * 1000;
+	gKernelArgs.arch_args.platform = PPC_PLATFORM_WII;
 
 	return B_OK;
 }
@@ -149,6 +152,9 @@ wii_start(void)
 	WPAD_Init();
 	if (KEYBOARD_Init(NULL) != 0)
 		dprintf("no USB keyboard found\n");
+
+	if (boot_arch_cpu_init() != B_OK)
+		panic("could not describe the cpu to the kernel\n");
 
 	if (boot_arch_mmu_init() != B_OK)
 		panic("could not set up the loader's memory map\n");
