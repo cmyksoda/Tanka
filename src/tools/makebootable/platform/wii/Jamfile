@@ -1,0 +1,5 @@
+SubDir HAIKU_TOP src tools makebootable platform wii ;
+
+SEARCH_SOURCE += [ FDirName $(HAIKU_TOP) src bin makebootable platform wii ] ;
+
+BuildPlatformMain <build>makebootable : makebootable.cpp : $(HOST_LIBSUPC++) ;
