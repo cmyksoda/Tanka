@@ -140,11 +140,8 @@ video_frame_buffer(void)
 }
 
 
-/*!	The VI can only scan out YUY2, which app_server cannot draw into. The kernel
-	graphics driver converts from this shadow buffer to the real one, so what
-	the kernel is told about is a plain 32 bit RGB frame buffer in memory the
-	loader has reserved for it.
-*/
+//! The VI only scans out YUY2, so app_server draws into this shadow buffer
+//! and the kernel driver converts.
 status_t
 platform_init_video(void)
 {
@@ -360,8 +357,7 @@ platform_load_ucode(BootVolume &volume)
 
 
 //	#pragma mark - libogc support
-//	libogc is built against newlib and devkitPro's libsysbase, neither of which
-//	the boot loader links. These are the pieces of them it actually reaches.
+//	The newlib and libsysbase pieces libogc actually reaches.
 
 
 extern "C" {
@@ -410,11 +406,7 @@ extern "C" {
 	}
 
 
-	/*!	The IOS IPC layer allocates its transfer buffers with this, long before
-		the boot loader heap exists, and IOS needs them in MEM2. libogc's arena2
-		is both, so hand out from there. Nothing in the loader's lifetime frees
-		them.
-	*/
+	//! IOS wants 32 byte aligned MEM2 buffers, long before the loader heap exists.
 	void*
 	memalign(size_t alignment, size_t size)
 	{
@@ -432,10 +424,7 @@ extern "C" {
 }
 
 
-/*!	newlib's ctype table, which libogc's IPC and keyboard code index directly.
-	Filled in before the first libogc call rather than spelled out as 257
-	octal constants.
-*/
+//! newlib's ctype table, which libogc's IPC and keyboard code index directly.
 void
 ctype_init(void)
 {

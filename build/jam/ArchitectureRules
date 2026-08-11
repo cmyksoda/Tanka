@@ -569,9 +569,7 @@ rule KernelArchitectureSetup architecture
 			case wii :
 				HAIKU_BOOT_$(bootTarget:U)_CCFLAGS += -fno-pic -fno-semantic-interposition -Wno-error=main ;
 				HAIKU_BOOT_$(bootTarget:U)_C++FLAGS += -fno-pic -fno-semantic-interposition -Wno-error=main ;
-				# The DOL is written out segment by segment, so the segment has
-				# to start exactly at the load address instead of being rounded
-				# down onto the low MEM1 system globals.
+				# the DOL segment must start at the load address, not below it
 				HAIKU_BOOT_$(bootTarget:U)_LDFLAGS += --defsym BOOT_LOADER_BASE=0x80004000
 					-z max-page-size=0x1000 ;
 			case * :

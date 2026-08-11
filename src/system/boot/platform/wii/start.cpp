@@ -20,8 +20,7 @@
 #include "debug.h"
 
 
-// the part of libogc's crt0 that has to run before any other libogc call;
-// none of these are declared in a public header
+// libogc's crt0 sequence, none of it declared in a public header
 extern "C" void PPCExcptInit(void);
 extern "C" void KThreadInit(void);
 extern "C" void KIrqInit(void);
@@ -74,8 +73,7 @@ platform_start_kernel(void)
 	dprintf("kernel entry at %p\n", (void*)kernelEntry);
 	dprintf("kernel stack top: %p\n", (void*)stackTop);
 
-	// libogc runs with interrupts enabled and a decrementer alarm ticking; the
-	// kernel takes over the exception vectors, so both have to be off first.
+	// the kernel takes over the exception vectors, so silence libogc's first
 	uint32_t cookie;
 	_CPU_ISR_Disable(cookie);
 	(void)cookie;
@@ -103,10 +101,7 @@ platform_boot_options(void)
 }
 
 
-/*!	Broadway runs at 729 MHz off a 243 MHz bus, and the time base counts at a
-	quarter of the bus clock. The kernel divides by the time base frequency in
-	arch_rtc_init(), so it must not be left at zero.
-*/
+//! arch_rtc_init() divides by the time base frequency, so it must not be zero.
 extern "C" status_t
 boot_arch_cpu_init(void)
 {

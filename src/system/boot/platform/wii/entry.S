@@ -9,14 +9,8 @@
 #define BOOT_STACK_SIZE	0x10000
 
 
-/*	Entry point of the DOL. Mirrors what libogc's crt0 (__app_start) does before
-	it would call main(): PPCEarlyInit() puts the CPU into the state libogc
-	expects (HID setup, caches, the standard MEM1/MEM2 BATs, translation on),
-	r2/r13 are the EABI small data bases every libogc object addresses its
-	globals through, and .sbss/.bss have to be zeroed before the first C code
-	runs. We keep our own stack rather than the one the Homebrew Channel left
-	in r1, which points into memory the loader hands to the kernel later.
-*/
+// DOL entry point: libogc's crt0 contract - CPU/BAT setup, EABI small data
+// bases in r2/r13, cleared bss, and a stack of our own.
 .text
 
 FUNCTION(_start):

@@ -15,9 +15,7 @@
 #include "debug.h"
 
 
-// libogc's console sink. Writes to the framebuffer console set up by CON_Init()
-// and, once CON_EnableGecko() has run, mirrors everything to a USB Gecko in the
-// memory card slot. No public libogc header declares it.
+// libogc's console sink, undeclared by any public header; also feeds the gecko
 extern "C" ssize_t __console_write(void *reent, void *fd, const char *buffer,
 	size_t length);
 
@@ -27,10 +25,7 @@ static uint32 sBufferPosition;
 static bool sConsoleReady;
 
 
-/*!	Keeps the output in RAM as well: the Wii has no serial port by default, so
-	on a hang this buffer is the only record of how far the loader got. It is
-	handed to the kernel as the boot loader's debug syslog.
-*/
+//! Kept in RAM too: on a hang this is the only record of how far we got.
 static inline void
 syslog_write(const char* buffer, size_t length)
 {
@@ -59,9 +54,7 @@ debug_write(const char* buffer, size_t length)
 		return;
 
 #ifdef WII_TRACE_TO_MMIO
-	// Dolphin logs every access to an unimplemented Hollywood register at
-	// error level, address included, which is the only output channel that
-	// works in a headless emulator with no USB Gecko.
+	// Dolphin logs unimplemented register accesses, address included
 	for (size_t i = 0; i < length; i++)
 		*(volatile uint8 *)(0xcd00f000 + (uint8)buffer[i]) = 0;
 #endif

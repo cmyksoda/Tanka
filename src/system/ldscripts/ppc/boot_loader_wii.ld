@@ -5,10 +5,7 @@ ENTRY(_start)
 
 SECTIONS
 {
-	/* Reserve room for the ELF headers inside the first segment. elf2dol emits
-	   a DOL section starting at the segment address, so without this the
-	   headers would be written below BOOT_LOADER_BASE, on top of the low MEM1
-	   system globals and libogc's exception vectors. */
+	/* room for the ELF headers, so elf2dol does not emit below BOOT_LOADER_BASE */
 	. = BOOT_LOADER_BASE + SIZEOF_HEADERS;
 
 	__text_begin = .;
@@ -68,16 +65,11 @@ SECTIONS
 	/DISCARD/ : { *(.comment .note .eh_frame .dtors .debug_* .gnu.attributes) }
 }
 
-/* libogc is built for the EABI and addresses .sdata/.sdata2 through r13/r2.
-   _start loads these two bases; nothing may be linked before them. */
+/* libogc addresses .sdata/.sdata2 off r13/r2; entry.S loads both bases */
 PROVIDE(_SDA_BASE_ = __sdata_start + 0x8000);
 PROVIDE(_SDA2_BASE_ = __sdata2_start + 0x8000);
 
-/* libogc reads these as absolute addresses, not as variables - devkitPPC's
-   rvl.ld/libogc_common.ld define them the same way. Arena1 is what is left of
-   MEM1 above the loader; the loader itself sits in MEM1 low with the kernel's
-   own image, so arena1 is capped well below the top of MEM1 and the rest is
-   handed to the kernel by mmu.cpp. */
+/* libogc reads these as absolute addresses, like devkitPPC's own rvl.ld */
 PROVIDE(__isIPL = 0);
 PROVIDE(__ppc_excpt_buf = 0x800000d0);
 PROVIDE(__ppc_excpt_table = 0x80003000);

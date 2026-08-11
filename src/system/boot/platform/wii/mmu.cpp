@@ -30,9 +30,7 @@
 #define MEM2_BASE	0x10000000
 #define MEM2_SIZE	(64 * 1024 * 1024)
 
-// What is left to libogc when the loader takes the rest of the arenas for the
-// kernel: MEM1 has to hold the scanout buffers, MEM2 the IOS transfer buffers
-// the SD and USB drivers allocate while the loader is still running.
+// left to libogc: MEM1 for scanout buffers, MEM2 for IOS transfer buffers
 #define LIBOGC_MEM1_RESERVE	(4 * 1024 * 1024)
 #define LIBOGC_MEM2_RESERVE	(8 * 1024 * 1024)
 
@@ -49,11 +47,8 @@ static wii_address_mapping sMappings[128];
 static uint32 sMappingCount;
 
 
-/*!	The loader runs under the BATs libogc's crt0 installed: MEM1 is mapped
-	cached at 0x80000000 and uncached at 0xc0000000, MEM2 cached at 0x90000000
-	and uncached at 0xd0000000. Everything the loader touches goes through
-	those, the kernel's own addresses only become valid at the hand-off.
-*/
+//! Loader addresses are libogc's BAT windows: MEM1 at 0x80000000, MEM2 at
+//! 0x90000000 cached, 0xc0000000/0xd0000000 uncached.
 addr_t
 wii_physical_to_loader(addr_t physical)
 {
@@ -137,8 +132,7 @@ boot_arch_mmu_init(void)
 	insert_physical_memory_range(MEM1_BASE, MEM1_SIZE);
 	insert_physical_memory_range(MEM2_BASE, MEM2_SIZE);
 
-	// Take what the kernel gets off the top of libogc's arenas and hand the
-	// shrunk arenas back, so libogc keeps allocating below us.
+	// take the kernel's memory off the top of the arenas, libogc keeps the rest
 	addr_t arena1Lo = (addr_t)SYS_GetArena1Lo();
 	addr_t arena1Hi = (addr_t)SYS_GetArena1Hi();
 	addr_t arena2Lo = (addr_t)SYS_GetArena2Lo();
@@ -163,9 +157,7 @@ boot_arch_mmu_init(void)
 	sMem2Pool.next = wii_loader_to_physical(mem2PoolStart);
 	sMem2Pool.end = ROUNDDOWN(wii_loader_to_physical(arena2Hi), B_PAGE_SIZE);
 
-	// Everything below the pools belongs to libogc, the loader image or IOS,
-	// and everything above MEM2's arena is IOS' as well. None of it is free
-	// memory as far as the kernel is concerned.
+	// everything outside the pools is libogc's, the loader's or IOS'
 	insert_physical_allocated_range(MEM1_BASE, sMem1Pool.next - MEM1_BASE);
 	insert_physical_allocated_range(sMem1Pool.end,
 		MEM1_BASE + MEM1_SIZE - sMem1Pool.end);
@@ -187,9 +179,7 @@ arch_mmu_allocate(void* virtualAddress, size_t size, uint8 protection,
 {
 	size = ROUNDUP(size, B_PAGE_SIZE);
 
-	// A requested address is a kernel address - the kernel image has to end up
-	// at the address it was linked for. Everything else is anonymous memory,
-	// which the kernel simply keeps seeing where the loader sees it.
+	// a requested address is a kernel address: only the kernel image needs one
 	addr_t kernelAddress = (addr_t)virtualAddress;
 	bool wantsExact = kernelAddress != 0;
 
