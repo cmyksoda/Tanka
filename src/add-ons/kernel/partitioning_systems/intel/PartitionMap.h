@@ -13,6 +13,7 @@
 
 // NOTE: <http://www.win.tue.nl/~aeb/partitions/partition_tables-2.html>
 
+#include <ByteOrder.h>
 #include <SupportDefs.h>
 #include <driver_settings.h>
 
@@ -70,20 +71,40 @@ struct partition_descriptor {
 	chs		begin;				// mostly ignored
 	uint8	type;				// empty, filesystem or extended
 	chs		end;				// mostly ignored
-	uint32	start;				// in sectors
-	uint32	size;				// in sectors
+	uint32	start;				// in sectors, little endian on disk
+	uint32	size;				// in sectors, little endian on disk
 
 	bool is_empty() const		{ return is_empty_type(type); }
 	bool is_extended() const	{ return is_extended_type(type); }
+
+	// Always go through these: the table is little endian whatever we are.
+	uint32 Start() const	{ return B_LENDIAN_TO_HOST_INT32(start); }
+	uint32 Size() const		{ return B_LENDIAN_TO_HOST_INT32(size); }
+	void SetStart(uint32 value)	{ start = B_HOST_TO_LENDIAN_INT32(value); }
+	void SetSize(uint32 value)	{ size = B_HOST_TO_LENDIAN_INT32(value); }
 } _PACKED;
 
 // partition_table
+static const uint16 kPartitionTableSectorSignature = 0xaa55;
+
+
 struct partition_table {
 	char					code_area[440];
 	uint32					disk_id;
 	uint16					reserved;
 	partition_descriptor	table[4];
 	uint16					signature;
+
+	bool has_valid_signature() const
+	{
+		return B_LENDIAN_TO_HOST_INT16(signature)
+			== kPartitionTableSectorSignature;
+	}
+
+	void set_signature()
+	{
+		signature = B_HOST_TO_LENDIAN_INT16(kPartitionTableSectorSignature);
+	}
 
 	void clear_code_area()
 	{
@@ -96,7 +117,6 @@ struct partition_table {
 	}
 } _PACKED;
 
-static const uint16 kPartitionTableSectorSignature = 0xaa55;
 
 class Partition;
 class PrimaryPartition;

@@ -385,8 +385,8 @@ Partition::SetTo(const partition_descriptor* descriptor, off_t tableOffset,
 	off_t baseOffset, uint32 blockSize)
 {
 	TRACE(("Partition::SetTo(): active: %x\n", descriptor->active));
-	SetTo(baseOffset + (off_t)descriptor->start * blockSize,
-		(off_t)descriptor->size * blockSize, descriptor->type,
+	SetTo(baseOffset + (off_t)descriptor->Start() * blockSize,
+		(off_t)descriptor->Size() * blockSize, descriptor->type,
 		descriptor->active, tableOffset, blockSize);
 }
 
@@ -556,8 +556,8 @@ PrimaryPartition::GetPartitionDescriptor(partition_descriptor* descriptor) const
 	if (IsEmpty()) {
 		memset(descriptor, 0, sizeof(partition_descriptor));
 	} else {
-		descriptor->start = Offset() / BlockSize();
-		descriptor->size = Size() / BlockSize();
+		descriptor->SetStart(Offset() / BlockSize());
+		descriptor->SetSize(Size() / BlockSize());
 		descriptor->type = Type();
 		descriptor->active = Active() ? 0x80 : 0x00;
 		descriptor->begin.SetUnused();
@@ -704,15 +704,15 @@ LogicalPartition::GetPartitionDescriptor(partition_descriptor* descriptor,
 {
 	PrimaryPartition* primary = GetPrimaryPartition();
 	if (inner) {
-		descriptor->start = (PartitionTableOffset() - primary->Offset())
-			/ BlockSize();
+		descriptor->SetStart((PartitionTableOffset() - primary->Offset())
+			/ BlockSize());
 		descriptor->type = primary->Type();
 	} else {
-		descriptor->start = (Offset() - PartitionTableOffset()) / BlockSize();
+		descriptor->SetStart((Offset() - PartitionTableOffset()) / BlockSize());
 		descriptor->type = Type();
 	}
 
-	descriptor->size = Size() / BlockSize();
+	descriptor->SetSize(Size() / BlockSize());
 	descriptor->active = 0x00;
 	descriptor->begin.SetUnused();
 	descriptor->end.SetUnused();

@@ -133,7 +133,7 @@ PartitionMapParser::_ParsePrimary(const partition_table* table,
 		return B_BAD_VALUE;
 
 	// check the signature
-	if (table->signature != kPartitionTableSectorSignature) {
+	if (!table->has_valid_signature()) {
 		TRACE("invalid PartitionTable signature: %" B_PRIx32 "\n",
 			(uint32)table->signature);
 		return B_BAD_DATA;
@@ -196,8 +196,7 @@ PartitionMapParser::_ParseExtended(PrimaryPartition* primary, off_t offset)
 			error = _ReadPartitionTable(offset);
 
 		// check the signature
-		if (error == B_OK
-			&& fPartitionTable->signature != kPartitionTableSectorSignature) {
+		if (error == B_OK && !fPartitionTable->has_valid_signature()) {
 			ERROR("ParseExtended: invalid partition table signature: %" B_PRIx32 "\n",
 				(uint32)fPartitionTable->signature);
 			error = B_BAD_DATA;

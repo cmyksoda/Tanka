@@ -120,7 +120,7 @@ PartitionMapWriter::WriteMBR(const PartitionMap* map, bool writeBootCode)
 	}
 #endif
 
-	partitionTable.signature = kPartitionTableSectorSignature;
+	partitionTable.set_signature();
 
 	for (int i = 0; i < 4; i++) {
 		partition_descriptor* descriptor = &partitionTable.table[i];
@@ -154,7 +154,7 @@ PartitionMapWriter::WriteLogical(const LogicalPartition* logical,
 			return error;
 	}
 
-	partitionTable.signature = kPartitionTableSectorSignature;
+	partitionTable.set_signature();
 
 	partition_descriptor* descriptor = &partitionTable.table[0];
 	logical->GetPartitionDescriptor(descriptor);
@@ -193,7 +193,7 @@ PartitionMapWriter::WriteExtendedHead(const LogicalPartition* logical,
 			return error;
 	}
 
-	partitionTable.signature = kPartitionTableSectorSignature;
+	partitionTable.set_signature();
 	partition_descriptor* descriptor;
 	if (logical == NULL) {
 		for (int32 i = 0; i < 4; i++) {
@@ -243,7 +243,7 @@ PartitionMapWriter::ClearExtendedHead(const PrimaryPartition* primary)
 
 	partition_table partitionTable;
 	partitionTable.clear_code_area();
-	partitionTable.signature = kPartitionTableSectorSignature;
+	partitionTable.set_signature();
 
 	partition_descriptor* descriptor;
 	for (int32 i = 0; i < 4; i++) {
