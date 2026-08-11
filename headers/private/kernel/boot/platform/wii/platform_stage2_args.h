@@ -1,5 +1,5 @@
 /*
-** Copyright 2026, Haiku-PowerPCii Contributors. All rights reserved.
+** Copyright 2026, Tanka Contributors. All rights reserved.
 ** Distributed under the terms of the MIT License.
 */
 #ifndef KERNEL_BOOT_PLATFORM_WII_STAGE2_ARGS_H

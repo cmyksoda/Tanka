@@ -21,7 +21,7 @@ static const char* kUsage =
 "Usage: %s [ options ] <file or device> ...\n"
 "\n"
 "Makes the given Haiku volume bootable. On the Nintendo Wii the volume needs\n"
-"no boot record: the Homebrew Channel loads apps/HaikuPowerPCii/boot.dol from\n"
+"no boot record: the Homebrew Channel loads apps/Tanka/boot.dol from\n"
 "the SD card, and that loader reads the volume itself. This command therefore\n"
 "only validates its arguments.\n"
 "\n"

@@ -15,7 +15,7 @@ fi
 
 BOOT_DOL="$1"
 HAIKU_IMG="$2"
-OUTPUT_DIR="Haiku-PowerPCii"
+OUTPUT_DIR="Tanka"
 
 if [ ! -f "$BOOT_DOL" ]; then
     echo "Error: Cannot find boot.dol at $BOOT_DOL"
@@ -30,13 +30,13 @@ fi
 echo "Creating Wii SD Card structure in project root..."
 
 # 1. Create Homebrew Channel App Directory
-mkdir -p "$OUTPUT_DIR/apps/HaikuPowerPCii"
+mkdir -p "$OUTPUT_DIR/apps/Tanka"
 
 # Copy bootloader
-cp "$BOOT_DOL" "$OUTPUT_DIR/apps/HaikuPowerPCii/boot.dol"
+cp "$BOOT_DOL" "$OUTPUT_DIR/apps/Tanka/boot.dol"
 
 # Create HBC meta.xml
-cat << 'EOF' > "$OUTPUT_DIR/apps/HaikuPowerPCii/meta.xml"
+cat << 'EOF' > "$OUTPUT_DIR/apps/Tanka/meta.xml"
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <app version="1">
     <name>Haiku OS</name>
@@ -68,8 +68,8 @@ boots the first Haiku (BFS) partition it finds. It does not read haiku.img as a
 file, so the card needs two partitions:
 
   1. FAT32, holding the Homebrew Channel app:
-       apps/HaikuPowerPCii/boot.dol
-       apps/HaikuPowerPCii/meta.xml
+       apps/Tanka/boot.dol
+       apps/Tanka/meta.xml
   2. Anything at least as large as haiku.img, written with the image itself:
        dd if=haiku/haiku.img of=/dev/<second partition> bs=1M status=progress
 
@@ -81,11 +81,11 @@ haiku/swap.img is a pre-allocated swap file for later use; the Wii only has
 EOF
 
 echo ""
-echo "Done! You can now zip the 'Haiku-PowerPCii' folder in the project root to distribute them."
+echo "Done! You can now zip the 'Tanka' folder in the project root to distribute them."
 echo ""
 echo "Structure created:"
-echo "  Haiku-PowerPCii/README.txt"
-echo "  Haiku-PowerPCii/apps/HaikuPowerPCii/boot.dol"
-echo "  Haiku-PowerPCii/apps/HaikuPowerPCii/meta.xml"
-echo "  Haiku-PowerPCii/haiku/haiku.img"
-echo "  Haiku-PowerPCii/haiku/swap.img"
+echo "  Tanka/README.txt"
+echo "  Tanka/apps/Tanka/boot.dol"
+echo "  Tanka/apps/Tanka/meta.xml"
+echo "  Tanka/haiku/haiku.img"
+echo "  Tanka/haiku/swap.img"
