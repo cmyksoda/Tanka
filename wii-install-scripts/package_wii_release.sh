@@ -8,13 +8,13 @@
 set -e
 
 if [ "$#" -ne 2 ]; then
-    echo "Usage: $0 <path_to_boot_dol> <path_to_haiku_img>"
-    echo "Example: $0 generated.ppc/objects/haiku/powerpc/release/system/boot/boot.dol generated.ppc/haiku.img"
+    echo "Usage: $0 <path_to_boot_dol> <path_to_tanka_img>"
+    echo "Example: $0 generated.ppc/objects/haiku/powerpc/release/system/boot/boot.dol generated.ppc/tanka.img"
     exit 1
 fi
 
 BOOT_DOL="$1"
-HAIKU_IMG="$2"
+TANKA_IMG="$2"
 OUTPUT_DIR="Tanka"
 
 if [ ! -f "$BOOT_DOL" ]; then
@@ -22,8 +22,8 @@ if [ ! -f "$BOOT_DOL" ]; then
     exit 1
 fi
 
-if [ ! -f "$HAIKU_IMG" ]; then
-    echo "Error: Cannot find haiku.img at $HAIKU_IMG"
+if [ ! -f "$TANKA_IMG" ]; then
+    echo "Error: Cannot find tanka.img at $TANKA_IMG"
     exit 1
 fi
 
@@ -55,34 +55,34 @@ if [ -f "$(dirname "$0")/icon.png" ]; then
     cp "$(dirname "$0")/icon.png" "$OUTPUT_DIR/apps/Tanka/icon.png"
 fi
 
-# 2. Create Haiku System Directory
-mkdir -p "$OUTPUT_DIR/haiku"
+# 2. Create Tanka System Directory
+mkdir -p "$OUTPUT_DIR/tanka"
 
 # Copy main BFS image
-cp "$HAIKU_IMG" "$OUTPUT_DIR/haiku/haiku.img"
+cp "$TANKA_IMG" "$OUTPUT_DIR/tanka/tanka.img"
 
 # Pre-allocate a 256MB swap file (Wii only has 88MB RAM, swap is highly recommended)
 echo "Pre-allocating 256MB swap file (swap.img)..."
-dd if=/dev/zero of="$OUTPUT_DIR/haiku/swap.img" bs=1M count=256 status=none
+dd if=/dev/zero of="$OUTPUT_DIR/tanka/swap.img" bs=1M count=256 status=none
 
 cat << 'EOF' > "$OUTPUT_DIR/README.txt"
-Haiku for the Nintendo Wii
+Tanka for the Nintendo Wii
 ==========================
 
 The loader opens the SD card as a raw disk, walks its MBR partition table and
-boots the first Haiku (BFS) partition it finds. It does not read haiku.img as a
+boots the first Tanka (BFS) partition it finds. It does not read tanka.img as a
 file, so the card needs two partitions:
 
   1. FAT32, holding the Homebrew Channel app:
        apps/Tanka/boot.dol
        apps/Tanka/meta.xml
-  2. Anything at least as large as haiku.img, written with the image itself:
-       dd if=haiku/haiku.img of=/dev/<second partition> bs=1M status=progress
+  2. Anything at least as large as tanka.img, written with the image itself:
+       dd if=tanka/tanka.img of=/dev/<second partition> bs=1M status=progress
 
-Copy the apps/ directory onto partition 1, then launch "Haiku OS" from the
+Copy the apps/ directory onto partition 1, then launch "Tanka" from the
 Homebrew Channel.
 
-haiku/swap.img is a pre-allocated swap file for later use; the Wii only has
+tanka/swap.img is a pre-allocated swap file for later use; the Wii only has
 88 MB of RAM. It is not read by the loader.
 EOF
 
@@ -96,5 +96,5 @@ echo "  Tanka/apps/Tanka/meta.xml"
 if [ -f "$(dirname "$0")/icon.png" ]; then
     echo "  Tanka/apps/Tanka/icon.png"
 fi
-echo "  Tanka/haiku/haiku.img"
-echo "  Tanka/haiku/swap.img"
+echo "  Tanka/tanka/tanka.img"
+echo "  Tanka/tanka/swap.img"

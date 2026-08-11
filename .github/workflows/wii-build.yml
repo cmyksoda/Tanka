@@ -93,5 +93,5 @@ jobs:
     - name: Upload Wii Release Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: haiku-wii-release
+        name: tanka-wii-release
         path: generated.ppc/Tanka/

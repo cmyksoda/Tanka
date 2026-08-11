@@ -13,11 +13,11 @@
 #include <gccore.h>
 #include <sdcard/wiisd_io.h>
 
-// A virtual block device that exposes the haiku.img file 
+// A virtual block device that exposes the tanka.img file 
 // residing on the physical Wii SD card.
 // For now, we just expose the RAW SD card! The user will have to 
 // write the anyboot image directly to the SD card, bypassing FAT32!
-// Later, we can add a FAT32 parser to find haiku.img.
+// Later, we can add a FAT32 parser to find tanka.img.
 
 class WiiSDBootDevice : public Node {
 public:
