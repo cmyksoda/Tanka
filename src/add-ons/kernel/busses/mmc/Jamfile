@@ -14,7 +14,7 @@ local sdhci_sources =
 	sdhci_pci.cpp
 ;
 
-if $(TARGET_ARCH) = powerpc {
+if $(TARGET_ARCH) = ppc {
 	sdhci_sources += sdhci_wii.cpp ;
 }
 

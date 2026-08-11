@@ -17,7 +17,7 @@ local ohci_sources =
 	ohci_rh.cpp
 ;
 
-if $(TARGET_ARCH) = powerpc {
+if $(TARGET_ARCH) = ppc {
 	ohci_sources += ohci_wii.cpp ;
 }
 
