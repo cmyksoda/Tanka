@@ -426,6 +426,7 @@ AddFilesToPackage add-ons input_server devices :
 	<input>tablet
 	<input>virtio@x86,x86_64,riscv64,arm,arm64
 	<input>wacom
+	<input>wiimote@ppc
 	;
 AddFilesToPackage add-ons input_server filters :
 	padblocker
