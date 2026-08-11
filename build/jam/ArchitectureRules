@@ -64,6 +64,11 @@ rule ArchitectureSetup architecture
 	HAIKU_LINKFLAGS_$(architecture) += $(ccBaseFlags) ;
 	HAIKU_ASFLAGS_$(architecture) += $(archFlags) -nostdinc ;
 
+	if $(cpu) = ppc {
+		# Workaround GCC 13 intrinsic conflicts with GCC 8.3.0 libstdc++ headers
+		HAIKU_C++FLAGS_$(architecture) += -D__remove_cv=_workaround_remove_cv -D__remove_reference=_workaround_remove_reference ;
+	}
+
 	# strip is required
 	if ! $(HAIKU_STRIP_$(architecture)) {
 		Exit "HAIKU_STRIP_$(architecture) not set. Please re-run configure." ;

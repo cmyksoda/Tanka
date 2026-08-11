@@ -59,7 +59,6 @@ AddFilesToPackage add-ons kernel generic :
 	;
 AddFilesToPackage add-ons kernel partitioning_systems :
 	amiga_rdb@m68k
-	apple@ppc
 	efi_gpt
 	intel
 	session
