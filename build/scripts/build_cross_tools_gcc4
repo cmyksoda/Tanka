@@ -289,8 +289,9 @@ mv "$installDir/$haikuMachine/lib/libstdc++.a" \
 	"$installDir/$haikuMachine/lib/libstdc++-static.a"
 
 # KEEP sysroot and objDir this run (needed to build kernel-flavor libgcc/libsupc++)
-echo "KEPT_SYSROOT=$sysrootDir" >> /work/keep-dirs.env
-echo "KEPT_OBJDIR=$objDir" >> /work/keep-dirs.env
+keepDirsFile="$installDir/keep-dirs.env"
+echo "KEPT_SYSROOT=$sysrootDir" > "$keepDirsFile"
+echo "KEPT_OBJDIR=$objDir" >> "$keepDirsFile"
 
 
 echo "binutils and gcc for cross compilation have been built successfully!"
