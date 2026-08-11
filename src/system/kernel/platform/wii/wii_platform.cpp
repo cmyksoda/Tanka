@@ -13,6 +13,7 @@
 
 static area_id sHollywoodArea = -1;
 static addr_t sHollywoodBase;
+static addr_t sStarletBase;
 
 
 addr_t
@@ -43,6 +44,14 @@ wii_platform_init_post_vm(struct kernel_args *args)
 		return sHollywoodArea;
 
 	sHollywoodBase = (addr_t)base;
+
+	// Optional: only reachable with AHB access, and only needed to reset.
+	if (map_physical_memory("wii starlet registers", WII_STARLET_PHYS_BASE,
+			WII_STARLET_SIZE, B_ANY_KERNEL_ADDRESS,
+			B_KERNEL_READ_AREA | B_KERNEL_WRITE_AREA, &base) >= 0) {
+		sStarletBase = (addr_t)base;
+	}
+
 	return B_OK;
 }
 
@@ -50,12 +59,15 @@ wii_platform_init_post_vm(struct kernel_args *args)
 void
 wii_platform_shutdown(bool reboot)
 {
-	if (sHollywoodBase == 0)
+	if (sStarletBase == 0) {
+		dprintf("wii_platform_shutdown(): no access to the Starlet registers, "
+			"cannot reset\n");
 		return;
+	}
 
-	// Deasserting SYSRSTB in the Hollywood resets register drives the console
-	// through a cold reset; there is no software poweroff without IOS.
-	volatile uint32 *resets = (volatile uint32 *)(sHollywoodBase
+	// Deasserting SYSRSTB in the resets register drives the console through a
+	// cold reset; there is no software poweroff without IOS.
+	volatile uint32 *resets = (volatile uint32 *)(sStarletBase
 		+ WII_HW_RESETS);
 	*resets = *resets & ~WII_RESETS_SYS;
 	eieio();
