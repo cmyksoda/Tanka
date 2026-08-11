@@ -77,8 +77,13 @@ register_child_devices_wii(void* cookie)
 	ohci_wii_sim_info* bus = (ohci_wii_sim_info*)cookie;
 	device_node* node = bus->driver_node;
 
+	uint32 index = 0;
+	gDeviceManager->get_attr_uint32(node, "ohci/controller_index", &index, false);
+
+	const char* name = (index == 1) ? "OHCI Wii Controller 1" : "OHCI Wii Controller 0";
+
 	device_attr attrs[] = {
-		{ B_DEVICE_PRETTY_NAME, B_STRING_TYPE, { .string = "OHCI Wii Controller" }},
+		{ B_DEVICE_PRETTY_NAME, B_STRING_TYPE, { .string = name }},
 		{ B_DEVICE_FIXED_CHILD, B_STRING_TYPE, { .string = USB_FOR_CONTROLLER_MODULE_NAME }},
 		{ NULL }
 	};
@@ -97,10 +102,16 @@ init_device_wii(device_node* node, void** device_cookie)
 
 	bus->driver_node = node;
 	
-	// Check which OHCI controller this is based on some attribute (e.g., FDT reg)
-	// For now, assume it's OHCI 0
-	bus->base = HOLLYWOOD_OHCI_0_BASE;
-	bus->irq = HOLLYWOOD_OHCI_0_IRQ;
+	uint32 index = 0;
+	gDeviceManager->get_attr_uint32(node, "ohci/controller_index", &index, false);
+
+	if (index == 1) {
+		bus->base = HOLLYWOOD_OHCI_1_BASE;
+		bus->irq = HOLLYWOOD_OHCI_1_IRQ;
+	} else {
+		bus->base = HOLLYWOOD_OHCI_0_BASE;
+		bus->irq = HOLLYWOOD_OHCI_0_IRQ;
+	}
 
 	*device_cookie = bus;
 	return B_OK;
@@ -116,13 +127,25 @@ uninit_device_wii(void* device_cookie)
 static status_t
 register_device_wii(device_node* parent)
 {
-	device_attr attrs[] = {
-		{B_DEVICE_PRETTY_NAME, B_STRING_TYPE, {.string = "OHCI Wii"}},
+	device_attr attrs0[] = {
+		{B_DEVICE_PRETTY_NAME, B_STRING_TYPE, {.string = "OHCI Wii USB0"}},
+		{"ohci/controller_index", B_UINT32_TYPE, {.ui32 = 0}},
+		{}
+	};
+
+	status_t status = gDeviceManager->register_node(parent,
+		OHCI_WII_DEVICE_MODULE_NAME, attrs0, NULL, NULL);
+	if (status != B_OK)
+		return status;
+
+	device_attr attrs1[] = {
+		{B_DEVICE_PRETTY_NAME, B_STRING_TYPE, {.string = "OHCI Wii USB1"}},
+		{"ohci/controller_index", B_UINT32_TYPE, {.ui32 = 1}},
 		{}
 	};
 
 	return gDeviceManager->register_node(parent,
-		OHCI_WII_DEVICE_MODULE_NAME, attrs, NULL, NULL);
+		OHCI_WII_DEVICE_MODULE_NAME, attrs1, NULL, NULL);
 }
 
 static float
