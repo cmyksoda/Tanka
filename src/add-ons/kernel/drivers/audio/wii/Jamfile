@@ -4,8 +4,8 @@ UsePrivateKernelHeaders ;
 UsePrivateHeaders audio ;
 
 KernelAddon wii_audio :
-	driver.c
-	wii_hardware.c
-	wii_multi.c
+	driver.cpp
+	wii_hardware.cpp
+	wii_multi.cpp
 ;
 

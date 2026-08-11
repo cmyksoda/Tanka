@@ -354,26 +354,26 @@ status_t
 multi_audio_control(void* cookie, uint32 op, void* arg, size_t len)
 {
 	switch(op) {
-		case B_MULTI_GET_DESCRIPTION:		return get_description(cookie, arg);
+		case B_MULTI_GET_DESCRIPTION:		return get_description(cookie, (multi_description*)arg);
 		case B_MULTI_GET_EVENT_INFO:		return B_ERROR;
 		case B_MULTI_SET_EVENT_INFO:		return B_ERROR;
 		case B_MULTI_GET_EVENT:				return B_ERROR;
-		case B_MULTI_GET_ENABLED_CHANNELS:	return get_enabled_channels(cookie, arg);
+		case B_MULTI_GET_ENABLED_CHANNELS:	return get_enabled_channels(cookie, (multi_channel_enable*)arg);
 		case B_MULTI_SET_ENABLED_CHANNELS:	return B_OK;
-		case B_MULTI_GET_GLOBAL_FORMAT:		return get_global_format(cookie, arg);
-		case B_MULTI_SET_GLOBAL_FORMAT:		return set_global_format(cookie, arg);
+		case B_MULTI_GET_GLOBAL_FORMAT:		return get_global_format((device_t*)cookie, (multi_format_info*)arg);
+		case B_MULTI_SET_GLOBAL_FORMAT:		return set_global_format((device_t*)cookie, (multi_format_info*)arg);
 		case B_MULTI_GET_CHANNEL_FORMATS:	return B_ERROR;
 		case B_MULTI_SET_CHANNEL_FORMATS:	return B_ERROR;
 		case B_MULTI_GET_MIX:				return B_ERROR;
 		case B_MULTI_SET_MIX:				return B_ERROR;
-		case B_MULTI_LIST_MIX_CHANNELS:		return list_mix_channels(cookie, arg);
-		case B_MULTI_LIST_MIX_CONTROLS:		return list_mix_controls(cookie, arg);
-		case B_MULTI_LIST_MIX_CONNECTIONS:	return list_mix_connections(cookie, arg);
-		case B_MULTI_GET_BUFFERS:			return get_buffers(cookie, arg);
+		case B_MULTI_LIST_MIX_CHANNELS:		return list_mix_channels(cookie, (multi_mix_channel_info*)arg);
+		case B_MULTI_LIST_MIX_CONTROLS:		return list_mix_controls((device_t*)cookie, (multi_mix_control_info*)arg);
+		case B_MULTI_LIST_MIX_CONNECTIONS:	return list_mix_connections(cookie, (multi_mix_connection_info*)arg);
+		case B_MULTI_GET_BUFFERS:			return get_buffers((device_t*)cookie, (multi_buffer_list*)arg);
 		case B_MULTI_SET_BUFFERS:			return B_ERROR;
 		case B_MULTI_SET_START_TIME:		return B_ERROR;
-		case B_MULTI_BUFFER_EXCHANGE:		return buffer_exchange(cookie, arg);
-		case B_MULTI_BUFFER_FORCE_STOP:		return buffer_force_stop(cookie);
+		case B_MULTI_BUFFER_EXCHANGE:		return buffer_exchange((device_t*)cookie, (multi_buffer_info*)arg);
+		case B_MULTI_BUFFER_FORCE_STOP:		return buffer_force_stop((device_t*)cookie);
 	}
 
 	dprintf("wii_audio: %s - unknown op\n", __func__);
