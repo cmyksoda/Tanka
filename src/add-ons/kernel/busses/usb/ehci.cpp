@@ -71,7 +71,12 @@ init_bus(device_node* node, void** bus_cookie)
 	if (gUSB->get_stack((void**)&stack) != B_OK)
 		return B_ERROR;
 
-	EHCI *ehci = new(std::nothrow) EHCI(&bus->pciinfo, bus->pci, bus->device, stack, node);
+	uint32 offset = bus->pciinfo.u.h0.base_registers[0] & (B_PAGE_SIZE - 1);
+	phys_addr_t physicalAddress = bus->pciinfo.u.h0.base_registers[0] - offset;
+	size_t mapSize = (bus->pciinfo.u.h0.base_register_sizes[0] + offset
+		+ B_PAGE_SIZE - 1) & ~(B_PAGE_SIZE - 1);
+
+	EHCI *ehci = new(std::nothrow) EHCI(physicalAddress, mapSize, bus->pciinfo.u.h0.interrupt_line, &bus->pciinfo, bus->pci, bus->device, stack, node);
 	if (ehci == NULL) {
 		return B_NO_MEMORY;
 	}
@@ -324,7 +329,8 @@ print_queue(ehci_qh *queueHead)
 //
 
 
-EHCI::EHCI(pci_info *info, pci_device_module_info* pci, pci_device* device, Stack *stack,
+EHCI::EHCI(phys_addr_t registersBase, size_t registersSize, uint32 irq,
+	pci_info *info, pci_device_module_info* pci, pci_device* device, Stack *stack,
 	device_node* node)
 	:	BusManager(stack, node),
 		fCapabilityRegisters(NULL),
@@ -364,7 +370,7 @@ EHCI::EHCI(pci_info *info, pci_device_module_info* pci, pci_device* device, Stac
 		fPortResetChange(0),
 		fPortSuspendChange(0),
 		fInterruptPollThread(-1),
-		fIRQ(0),
+		fIRQ(irq),
 		fUseMSI(false)
 {
 	// Create a lock for the isochronous transfer list
@@ -380,7 +386,7 @@ EHCI::EHCI(pci_info *info, pci_device_module_info* pci, pci_device* device, Stac
 
 	// ATI/AMD SB600/SB700 periodic list cache workaround
 	// Logic kindly borrowed from NetBSD PR 40056
-	if (fPCIInfo->vendor_id == AMD_SBX00_VENDOR) {
+	if (fPCIInfo && fPCIInfo->vendor_id == AMD_SBX00_VENDOR) {
 		bool applyWorkaround = false;
 
 		if (fPCIInfo->device_id == AMD_SB600_EHCI_CONTROLLER) {
@@ -427,32 +433,28 @@ EHCI::EHCI(pci_info *info, pci_device_module_info* pci, pci_device* device, Stac
 		}
 	}
 
-	// enable busmaster and memory mapped access
-	uint16 command = fPci->read_pci_config(fDevice, PCI_command, 2);
-	command &= ~PCI_command_io;
-	command |= PCI_command_master | PCI_command_memory;
+	if (fPci) {
+		// enable busmaster and memory mapped access
+		uint16 command = fPci->read_pci_config(fDevice, PCI_command, 2);
+		command &= ~PCI_command_io;
+		command |= PCI_command_master | PCI_command_memory;
 
-	fPci->write_pci_config(fDevice, PCI_command, 2, command);
+		fPci->write_pci_config(fDevice, PCI_command, 2, command);
+	}
 
 	// map the registers
-	uint32 offset = fPCIInfo->u.h0.base_registers[0] & (B_PAGE_SIZE - 1);
-	phys_addr_t physicalAddress = fPCIInfo->u.h0.base_registers[0] - offset;
-	size_t mapSize = (fPCIInfo->u.h0.base_register_sizes[0] + offset
-		+ B_PAGE_SIZE - 1) & ~(B_PAGE_SIZE - 1);
-
-	TRACE("map physical memory 0x%08" B_PRIx32 " (base: 0x%08" B_PRIxPHYSADDR
-		"; offset: %" B_PRIx32 "); size: %" B_PRIu32 "\n",
-		fPCIInfo->u.h0.base_registers[0], physicalAddress, offset,
-		fPCIInfo->u.h0.base_register_sizes[0]);
-
 	fRegisterArea = map_physical_memory("EHCI memory mapped registers",
-		physicalAddress, mapSize, B_ANY_KERNEL_BLOCK_ADDRESS,
+		registersBase, registersSize, B_ANY_KERNEL_BLOCK_ADDRESS,
 		B_KERNEL_READ_AREA | B_KERNEL_WRITE_AREA,
 		(void **)&fCapabilityRegisters);
 	if (fRegisterArea < 0) {
 		TRACE_ERROR("failed to map register memory\n");
 		return;
 	}
+
+	uint32 offset = 0;
+	if (fPCIInfo)
+		offset = fPCIInfo->u.h0.base_registers[0] & (B_PAGE_SIZE - 1);
 
 	fCapabilityRegisters += offset;
 	fOperationalRegisters = fCapabilityRegisters + ReadCapReg8(EHCI_CAPLENGTH);
@@ -581,23 +583,29 @@ EHCI::EHCI(pci_info *info, pci_device_module_info* pci, pci_device* device, Stac
 		resume_thread(fInterruptPollThread);
 	} else {
 		// Find the right interrupt vector, using MSIs if available.
-		fIRQ = fPCIInfo->u.h0.interrupt_line;
-		if (fIRQ == 0xFF)
-			fIRQ = 0;
+		if (fPCIInfo) {
+			fIRQ = fPCIInfo->u.h0.interrupt_line;
+			if (fIRQ == 0xFF)
+				fIRQ = 0;
 
-		if (fPci->get_msi_count(fDevice) >= 1) {
-			uint32 msiVector = 0;
-			if (fPci->configure_msi(fDevice, 1, &msiVector) == B_OK
-				&& fPci->enable_msi(fDevice) == B_OK) {
-				TRACE_ALWAYS("using message signaled interrupts\n");
-				fIRQ = msiVector;
-				fUseMSI = true;
+			if (fPci->get_msi_count(fDevice) >= 1) {
+				uint32 msiVector = 0;
+				if (fPci->configure_msi(fDevice, 1, &msiVector) == B_OK
+					&& fPci->enable_msi(fDevice) == B_OK) {
+					TRACE_ALWAYS("using message signaled interrupts\n");
+					fIRQ = msiVector;
+					fUseMSI = true;
+				}
 			}
 		}
 
 		if (fIRQ == 0) {
-			TRACE_MODULE_ERROR("device PCI:%d:%d:%d was assigned an invalid IRQ\n",
-				fPCIInfo->bus, fPCIInfo->device, fPCIInfo->function);
+			if (fPCIInfo) {
+				TRACE_MODULE_ERROR("device PCI:%d:%d:%d was assigned an invalid IRQ\n",
+					fPCIInfo->bus, fPCIInfo->device, fPCIInfo->function);
+			} else {
+				TRACE_MODULE_ERROR("device was assigned an invalid IRQ\n");
+			}
 			return;
 		}
 
@@ -606,15 +614,17 @@ EHCI::EHCI(pci_info *info, pci_device_module_info* pci, pci_device* device, Stac
 			(void *)this, 0);
 	}
 
-	// ensure that interrupts are en-/disabled on the PCI device
-	command = fPci->read_pci_config(fDevice, PCI_command, 2);
-	if ((polling || fUseMSI) == ((command & PCI_command_int_disable) == 0)) {
-		if (polling || fUseMSI)
-			command &= ~PCI_command_int_disable;
-		else
-			command |= PCI_command_int_disable;
+	if (fPci) {
+		// ensure that interrupts are en-/disabled on the PCI device
+		uint16 command = fPci->read_pci_config(fDevice, PCI_command, 2);
+		if ((polling || fUseMSI) == ((command & PCI_command_int_disable) == 0)) {
+			if (polling || fUseMSI)
+				command &= ~PCI_command_int_disable;
+			else
+				command |= PCI_command_int_disable;
 
-		fPci->write_pci_config(fDevice, PCI_command, 2, command);
+			fPci->write_pci_config(fDevice, PCI_command, 2, command);
+		}
 	}
 
 	fEnabledInterrupts = EHCI_USBINTR_HOSTSYSERR | EHCI_USBINTR_USBERRINT
