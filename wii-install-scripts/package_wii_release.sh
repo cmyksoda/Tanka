@@ -44,7 +44,7 @@ cat << 'EOF' > "$OUTPUT_DIR/apps/HaikuPowerPCii/meta.xml"
     <version>R1/beta</version>
     <release_date></release_date>
     <short_description>Haiku Operating System</short_description>
-    <long_description>Bootloader for the Haiku Operating System on Nintendo Wii. Haiku requires a valid haiku.img located at sd:/haiku/haiku.img to boot.</long_description>
+    <long_description>Bootloader for the Haiku Operating System on Nintendo Wii. The loader reads the SD card as a raw disk and boots the first Haiku (BFS) partition it finds, so haiku.img must be written to a second partition of the card - see README.txt.</long_description>
     <ahb_access/>
 </app>
 EOF
@@ -59,10 +59,32 @@ cp "$HAIKU_IMG" "$OUTPUT_DIR/haiku/haiku.img"
 echo "Pre-allocating 256MB swap file (swap.img)..."
 dd if=/dev/zero of="$OUTPUT_DIR/haiku/swap.img" bs=1M count=256 status=none
 
+cat << 'EOF' > "$OUTPUT_DIR/README.txt"
+Haiku for the Nintendo Wii
+==========================
+
+The loader opens the SD card as a raw disk, walks its MBR partition table and
+boots the first Haiku (BFS) partition it finds. It does not read haiku.img as a
+file, so the card needs two partitions:
+
+  1. FAT32, holding the Homebrew Channel app:
+       apps/HaikuPowerPCii/boot.dol
+       apps/HaikuPowerPCii/meta.xml
+  2. Anything at least as large as haiku.img, written with the image itself:
+       dd if=haiku/haiku.img of=/dev/<second partition> bs=1M status=progress
+
+Copy the apps/ directory onto partition 1, then launch "Haiku OS" from the
+Homebrew Channel.
+
+haiku/swap.img is a pre-allocated swap file for later use; the Wii only has
+88 MB of RAM. It is not read by the loader.
+EOF
+
 echo ""
 echo "Done! You can now zip the 'Haiku-PowerPCii' folder in the project root to distribute them."
 echo ""
 echo "Structure created:"
+echo "  Haiku-PowerPCii/README.txt"
 echo "  Haiku-PowerPCii/apps/HaikuPowerPCii/boot.dol"
 echo "  Haiku-PowerPCii/apps/HaikuPowerPCii/meta.xml"
 echo "  Haiku-PowerPCii/haiku/haiku.img"
