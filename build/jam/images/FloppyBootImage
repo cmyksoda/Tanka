@@ -73,7 +73,6 @@ AddFilesToFloppyBootArchive system add-ons kernel partitioning_systems :
 	session
 	;
 AddFilesToFloppyBootArchive system add-ons kernel interrupt_controllers :
-	openpic@ppc
 	;
 
 if $(USB_BOOT) = 1 {
@@ -152,7 +151,6 @@ if $(NET_BOOT) = 1 {
 # boot module links
 AddBootModuleSymlinksToFloppyBootArchive [ FFilterByBuildFeatures
 	$(SYSTEM_ADD_ONS_BUS_MANAGERS)
-	openpic@ppc
 	ata_adapter
 	scsi_periph
 	generic_x86@x86

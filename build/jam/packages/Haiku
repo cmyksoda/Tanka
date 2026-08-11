@@ -28,7 +28,6 @@ AddFilesToPackage add-ons kernel busses agp_gart :
 	;
 
 AddFilesToPackage add-ons kernel busses ata :
-	macio_ata@ppc
 	generic_ide_pci
 	it8211
 	legacy_sata
@@ -47,7 +46,6 @@ AddFilesToPackage add-ons kernel busses pci :
 	<pci>designware@riscv64
 	<pci>ecam@riscv64,arm,arm64
 	<pci>x86@x86,x86_64
-	<pci>openfirmware@ppc
 	;
 AddFilesToPackage add-ons kernel busses random :
 	ccp_rng@x86,x86_64
@@ -97,9 +95,6 @@ AddFilesToPackage add-ons kernel partitioning_systems :
 	efi_gpt
 	intel
 	session
-	;
-AddFilesToPackage add-ons kernel interrupt_controllers :
-	openpic@ppc
 	;
 AddFilesToPackage add-ons kernel power cpufreq :
 	amd_pstates@x86,x86_64
@@ -188,7 +183,6 @@ AddDriversToPackage dvb :
 AddDriversToPackage graphics
 	: $(SYSTEM_ADD_ONS_DRIVERS_GRAPHICS) ;
 AddDriversToPackage input :
-	adb@ppc
 	ps2_hid
 	usb_hid
 	wacom
@@ -338,7 +332,6 @@ AddBootModuleSymlinksToPackage
 	dpc
 	efi_gpt
 	generic_ide_pci
-	macio_ata@ppc
 	hyperv@x86,x86_64
 	hyperv_scsi@x86,x86_64
 	ide_isa@x86
@@ -349,13 +342,11 @@ AddBootModuleSymlinksToPackage
 	mmc
 	mmc_disk
 	nvme_disk
-	openpic@ppc
 	packagefs
 	pci
 	<pci>designware@riscv64
 	<pci>ecam@riscv64,arm,arm64
 	<pci>x86@x86,x86_64
-	<pci>openfirmware@ppc
 	fdt@riscv64,arm,arm64
 	scsi
 	scsi_cd

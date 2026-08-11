@@ -64,7 +64,6 @@ AddFilesToPackage add-ons kernel partitioning_systems :
 	session
 	;
 AddFilesToPackage add-ons kernel interrupt_controllers :
-	openpic@ppc
 	;
 AddFilesToPackage add-ons kernel power cpufreq :
 	intel_pstates@x86,x86_64
@@ -305,7 +304,6 @@ AddBootModuleSymlinksToPackage
 	dpc
 	scsi
 	usb
-	openpic@ppc
 	ata_adapter
 	scsi_periph
 	ahci
