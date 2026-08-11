@@ -153,7 +153,7 @@ create_group_control(multi_mix_control* multi, int32 idx, int32 parent, int32 st
 	multi->parent = parent;
 	multi->flags = B_MULTI_MIX_GROUP;
 	multi->master = MULTI_AUDIO_MASTER_ID;
-	multi->string = (string_id)string;
+	multi->string = (strind_id)string;
 	if (name)
 		strcpy(multi->name, name);
 
