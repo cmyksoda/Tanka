@@ -639,7 +639,7 @@ EHCI::EHCI(phys_addr_t registersBase, size_t registersSize, uint32 irq,
 	size_t frameListSize = B_PAGE_SIZE + B_PAGE_SIZE + itdListSize
 		+ sitdListSize;
 
-	// allocate the periodic frame list
+	phys_addr_t physicalAddress;
 	fPeriodicFrameListArea = fStack->AllocateArea((void **)&fPeriodicFrameList,
 		&physicalAddress, frameListSize, "USB EHCI Periodic Framelist");
 	if (fPeriodicFrameListArea < 0) {
