@@ -39,15 +39,21 @@ cp "$BOOT_DOL" "$OUTPUT_DIR/apps/Tanka/boot.dol"
 cat << 'EOF' > "$OUTPUT_DIR/apps/Tanka/meta.xml"
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <app version="1">
-    <name>Haiku OS</name>
-    <coder>Haiku Project</coder>
-    <version>R1/beta</version>
+    <name>Tanka</name>
+    <coder>cmyksoda</coder>
+    <version></version>
     <release_date></release_date>
-    <short_description>Haiku Operating System</short_description>
-    <long_description>Bootloader for the Haiku Operating System on Nintendo Wii. The loader reads the SD card as a raw disk and boots the first Haiku (BFS) partition it finds, so haiku.img must be written to a second partition of the card - see README.txt.</long_description>
+    <short_description>Operating system based on Haiku</short_description>
+    <long_description>This is an experimental operating system derived from Haiku®, the free and open-source operating system that serves as the spiritual successor to BeOS.
+
+Haiku® and the HAIKU logo® are registered trademarks of Haiku, Inc. and are developed by the Haiku Project.</long_description>
     <ahb_access/>
 </app>
 EOF
+
+if [ -f "$(dirname "$0")/icon.png" ]; then
+    cp "$(dirname "$0")/icon.png" "$OUTPUT_DIR/apps/Tanka/icon.png"
+fi
 
 # 2. Create Haiku System Directory
 mkdir -p "$OUTPUT_DIR/haiku"
@@ -87,5 +93,8 @@ echo "Structure created:"
 echo "  Tanka/README.txt"
 echo "  Tanka/apps/Tanka/boot.dol"
 echo "  Tanka/apps/Tanka/meta.xml"
+if [ -f "$(dirname "$0")/icon.png" ]; then
+    echo "  Tanka/apps/Tanka/icon.png"
+fi
 echo "  Tanka/haiku/haiku.img"
 echo "  Tanka/haiku/swap.img"
