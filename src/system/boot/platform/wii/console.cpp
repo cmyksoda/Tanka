@@ -246,9 +246,26 @@ console_set_color(int32 foreground, int32 background)
 }
 
 
+//! Menu-only need, and KEYBOARD_Init() never returns under Dolphin MMU=True.
+static void
+console_init_input(void)
+{
+	static bool sInputInitialized = false;
+	if (sInputInitialized)
+		return;
+	sInputInitialized = true;
+
+	WPAD_Init();
+	if (KEYBOARD_Init(NULL) != 0)
+		dprintf("no USB keyboard found\n");
+}
+
+
 extern "C" int
 console_wait_for_key(void)
 {
+	console_init_input();
+
 	while (true) {
 		WPAD_ScanPads();
 		u32 pressed = WPAD_ButtonsDown(0);

@@ -15,8 +15,6 @@
 #include <gccore.h>
 #include <ogcsys.h>
 #include <ogc/machine/processor.h>
-#include <wiiuse/wpad.h>
-#include <wiikeyboard/keyboard.h>
 
 #include "console.h"
 #include "debug.h"
@@ -149,10 +147,6 @@ wii_start(void)
 	dprintf("\nHaiku boot loader for the Nintendo Wii\n");
 	dprintf("MEM1 arena: %p - %p, MEM2 arena: %p - %p\n", SYS_GetArena1Lo(),
 		SYS_GetArena1Hi(), SYS_GetArena2Lo(), SYS_GetArena2Hi());
-
-	WPAD_Init();
-	if (KEYBOARD_Init(NULL) != 0)
-		dprintf("no USB keyboard found\n");
 
 	if (boot_arch_cpu_init() != B_OK)
 		panic("could not describe the cpu to the kernel\n");
