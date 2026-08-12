@@ -6,6 +6,8 @@ While this project is based on Haiku, it is **not** an official distribution fro
 
 Much work has been done by Action Retro, whose fork of upstream Haiku is what *this project* forks, to make Haiku more compatible with PowerPC systems. This endeavor wouldn't exist without his repo, you should check it out.
 
+This project is, frankly, well above my skill level in terms of programming and is heavily AI-assisted. Expect bugs and instability.
+
 ---
 
 *Haiku® and the HAIKU logo® are registered trademarks of [Haiku, Inc.](http://www.haiku-inc.org) and are developed by the [Haiku Project](http://www.haiku-os.org).*
