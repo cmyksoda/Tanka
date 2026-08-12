@@ -1,0 +1,7 @@
+SubDir HAIKU_TOP src add-ons kernel drivers disk wii_sd ;
+
+UsePrivateKernelHeaders ;
+
+KernelAddon wii_sd :
+	wii_sd.cpp
+	;

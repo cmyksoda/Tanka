@@ -6,3 +6,7 @@ SubInclude HAIKU_TOP src add-ons kernel drivers disk nvme ;
 SubInclude HAIKU_TOP src add-ons kernel drivers disk scsi ;
 SubInclude HAIKU_TOP src add-ons kernel drivers disk usb ;
 SubInclude HAIKU_TOP src add-ons kernel drivers disk virtual ;
+
+if $(TARGET_ARCH) = ppc {
+	SubInclude HAIKU_TOP src add-ons kernel drivers disk wii_sd ;
+}
