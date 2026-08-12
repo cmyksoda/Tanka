@@ -67,6 +67,7 @@ void wii_rtc_set(uint32 seconds);
 
 status_t wii_serial_debug_init(void);
 void wii_serial_debug_put_char(char c);
+char wii_serial_debug_get_char(void);
 
 #ifdef __cplusplus
 }

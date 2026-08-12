@@ -193,6 +193,31 @@ usbgecko_send_byte(char c)
 }
 
 
+/*!	RX is the 16 bit command 0xA000; bit 27 of the reply is set when a byte
+	is waiting, which then sits in reply bits 16-23.
+*/
+static bool
+usbgecko_receive_byte(char* _c)
+{
+	uint32 data = 0xA0000000;
+
+	*exi_reg(EXI_GECKO_CHANNEL, EXI_CSR)
+		= EXI_CSR_CLK_32MHZ | EXI_CSR_CS(0);
+	eieio();
+
+	bool ok = exi_imm(EXI_GECKO_CHANNEL, &data, 2, EXI_CR_READWRITE);
+
+	*exi_reg(EXI_GECKO_CHANNEL, EXI_CSR) = 0;
+	eieio();
+
+	if (!ok || (data & 0x08000000) == 0)
+		return false;
+
+	*_c = (char)(data >> 16);
+	return true;
+}
+
+
 status_t
 wii_serial_debug_init(void)
 {
@@ -216,4 +241,18 @@ wii_serial_debug_put_char(char c)
 		if (usbgecko_send_byte(c))
 			break;
 	}
+}
+
+
+char
+wii_serial_debug_get_char(void)
+{
+	if (sEXIBase == 0)
+		return 0;
+
+	// The kernel debugger expects a blocking read.
+	char c;
+	while (!usbgecko_receive_byte(&c))
+		;
+	return c;
 }
