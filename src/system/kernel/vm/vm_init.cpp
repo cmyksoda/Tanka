@@ -43,7 +43,10 @@ unmap_and_free_physical_pages(VMTranslationMap* map, addr_t start, addr_t end)
 			vm_page* page = vm_lookup_page(physicalAddress / B_PAGE_SIZE);
 			if (page != NULL && page->State() != PAGE_STATE_FREE
 					&& page->State() != PAGE_STATE_CLEAR
-					&& page->State() != PAGE_STATE_UNUSED) {
+					&& page->State() != PAGE_STATE_UNUSED
+					&& !page->IsMapped()) {
+				// a mapped page is owned by an area already; the boot loader
+				// mapping is merely an alias of it, so only unmap it below
 				DEBUG_PAGE_ACCESS_START(page);
 				vm_page_free_etc(NULL, page, &reservation);
 			}
