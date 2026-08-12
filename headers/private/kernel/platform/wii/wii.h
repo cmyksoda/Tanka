@@ -45,6 +45,22 @@ struct real_time_data;
 // Processor interface cause bit aggregating every Hollywood interrupt.
 #define WII_PI_INT_HOLLYWOOD		14
 
+// IPC mailboxes; both sides trade the physical address of a request block.
+#define WII_HW_IPC_PPCMSG			0x000
+#define WII_HW_IPC_PPCCTRL			0x004
+#define WII_HW_IPC_ARMMSG			0x008
+
+#define WII_IPC_CTRL_X1				0x01	// request pending, set by the PPC
+#define WII_IPC_CTRL_Y2				0x02	// IOS acknowledged, write 1 to clear
+#define WII_IPC_CTRL_Y1				0x04	// reply pending, write 1 to clear
+#define WII_IPC_CTRL_X2				0x08	// reply consumed, relaunch IOS
+#define WII_IPC_CTRL_IY1			0x10	// interrupt enables; the driver polls
+#define WII_IPC_CTRL_IY2			0x20
+#define WII_IPC_CTRL_IY_MASK		(WII_IPC_CTRL_IY1 | WII_IPC_CTRL_IY2)
+
+// Hollywood source the IPC mailboxes raise; stays masked in the PIC.
+#define WII_IRQ_IPC					30
+
 
 #ifdef __cplusplus
 extern "C" {
@@ -68,6 +84,20 @@ void wii_rtc_set(uint32 seconds);
 status_t wii_serial_debug_init(void);
 void wii_serial_debug_put_char(char c);
 char wii_serial_debug_get_char(void);
+
+// Synchronous IOS RPC; every call initializes the transport on demand.
+struct wii_ios_vector {
+	void	*buffer;
+	size_t	size;
+};
+
+status_t wii_ipc_init(void);
+int32 wii_ios_open(const char *path, uint32 mode);
+int32 wii_ios_close(int32 fd);
+int32 wii_ios_ioctl(int32 fd, uint32 op, const void *in, size_t inSize,
+	void *io, size_t ioSize);
+int32 wii_ios_ioctlv(int32 fd, uint32 op, uint32 countIn, uint32 countIO,
+	struct wii_ios_vector *vectors);
 
 #ifdef __cplusplus
 }
