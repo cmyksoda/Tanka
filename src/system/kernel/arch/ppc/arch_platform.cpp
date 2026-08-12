@@ -39,6 +39,13 @@ PPCPlatform::Default()
 }
 
 
+status_t
+PPCPlatform::InitPostThread(struct kernel_args *kernelArgs)
+{
+	return B_OK;
+}
+
+
 // #pragma mark - U-Boot + FDT
 
 
@@ -173,6 +180,7 @@ public:
 	virtual status_t Init(struct kernel_args *kernelArgs);
 	virtual status_t InitSerialDebug(struct kernel_args *kernelArgs);
 	virtual status_t InitPostVM(struct kernel_args *kernelArgs);
+	virtual status_t InitPostThread(struct kernel_args *kernelArgs);
 	virtual status_t InitRTC(struct kernel_args *kernelArgs,
 		struct real_time_data *data);
 
@@ -262,13 +270,20 @@ PPCWii::InitPostVM(struct kernel_args *kernelArgs)
 		return B_ERROR;
 	}
 
-	// Spawn the 60Hz conversion thread
+	return B_OK;
+}
+
+
+//! The conversion thread can only be spawned once the thread system is up.
+status_t
+PPCWii::InitPostThread(struct kernel_args *kernelArgs)
+{
 	thread_id thread = spawn_kernel_thread(VideoThread, "wii video conversion",
 		B_DISPLAY_PRIORITY, this);
-	if (thread >= 0)
-		resume_thread(thread);
+	if (thread < 0)
+		return thread;
 
-	return B_OK;
+	return resume_thread(thread);
 }
 
 
@@ -343,7 +358,7 @@ PPCWii::InitRTC(struct kernel_args *kernelArgs,
 char
 PPCWii::SerialDebugGetChar()
 {
-	return 0;
+	return wii_serial_debug_get_char();
 }
 
 
@@ -501,5 +516,5 @@ arch_platform_init_post_vm(struct kernel_args *kernelArgs)
 status_t
 arch_platform_init_post_thread(struct kernel_args *kernelArgs)
 {
-	return B_OK;
+	return sPPCPlatform->InitPostThread(kernelArgs);
 }

@@ -29,6 +29,7 @@ public:
 	virtual status_t Init(struct kernel_args *kernelArgs) = 0;
 	virtual status_t InitSerialDebug(struct kernel_args *kernelArgs) = 0;
 	virtual status_t InitPostVM(struct kernel_args *kernelArgs) = 0;
+	virtual status_t InitPostThread(struct kernel_args *kernelArgs);
 	virtual status_t InitRTC(struct kernel_args *kernelArgs,
 		struct real_time_data *data) = 0;
 
