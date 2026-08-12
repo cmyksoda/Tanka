@@ -120,6 +120,7 @@ platform_boot_options(void)
 extern "C" status_t
 boot_arch_cpu_init(void)
 {
+	gKernelArgs.num_cpus = 1;
 	gKernelArgs.arch_args.cpu_frequency = TB_CORE_CLOCK;
 	gKernelArgs.arch_args.bus_frequency = TB_BUS_CLOCK;
 	gKernelArgs.arch_args.time_base_frequency = TB_TIMER_CLOCK * 1000;
