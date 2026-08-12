@@ -545,13 +545,6 @@ arch_int_init_post_vm(kernel_args *args)
 status_t
 arch_int_init_io(kernel_args* args)
 {
-	return B_OK;
-}
-
-
-status_t
-arch_int_init_post_device_manager(struct kernel_args *args)
-{
 	// PPC is the only arch that never reserved its I/O interrupt vectors, so
 	// every sVectors[] entry kept assigned_cpu == NULL. install_io_interrupt_
 	// handler() tolerates that (it only dereferences assigned_cpu for
@@ -571,7 +564,7 @@ arch_int_init_post_device_manager(struct kernel_args *args)
 	// the way the Mac's PCI OpenPIC used to be.
 	status_t error = wii_pic_init();
 	if (error != B_OK) {
-		panic("arch_int_init_post_device_manager(): Failed to initialize the "
+		panic("arch_int_init_io(): Failed to initialize the "
 			"Wii interrupt controller: %s", strerror(error));
 		return error;
 	}
@@ -579,6 +572,13 @@ arch_int_init_post_device_manager(struct kernel_args *args)
 	sPIC = wii_pic_module();
 	sPICCookie = NULL;
 
+	return B_OK;
+}
+
+
+status_t
+arch_int_init_post_device_manager(struct kernel_args *args)
+{
 	return B_OK;
 }
 
