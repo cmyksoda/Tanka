@@ -392,10 +392,15 @@ PPCVMTranslationMapClassic::LookupPageTableEntry(addr_t virtualAddress)
 	page_table_entry_group *group = &(m->PageTable())[hash & m->PageTableHashMask()];
 	page_table_entry_group *primaryGroup = group;
 
+	// Only a VALID entry may match: an invalidated slot keeps its tag fields,
+	// and returning such a twin makes every consumer act on the wrong slot -
+	// most fatally Map()'s stale-translation defense, which would clear the
+	// dead twin and leave the live PTE (and its translation) untouched.
 	for (int i = 0; i < 8; i++) {
 		page_table_entry *entry = &group->entry[i];
 
-		if (entry->virtual_segment_id == virtualSegmentID
+		if (entry->valid
+			&& entry->virtual_segment_id == virtualSegmentID
 			&& entry->secondary_hash == false
 			&& entry->abbr_page_index == ((virtualAddress >> 22) & 0x3f))
 			return entry;
@@ -409,7 +414,8 @@ PPCVMTranslationMapClassic::LookupPageTableEntry(addr_t virtualAddress)
 	for (int i = 0; i < 8; i++) {
 		page_table_entry *entry = &group->entry[i];
 
-		if (entry->virtual_segment_id == virtualSegmentID
+		if (entry->valid
+			&& entry->virtual_segment_id == virtualSegmentID
 			&& entry->secondary_hash == true
 			&& entry->abbr_page_index == ((virtualAddress >> 22) & 0x3f))
 			return entry;
