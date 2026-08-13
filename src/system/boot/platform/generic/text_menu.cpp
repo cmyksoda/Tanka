@@ -225,7 +225,7 @@ draw_menu(Menu *menu)
 
 #ifdef HAIKU_DISTRO_COMPATIBILITY_COMPATIBLE
 	print_centered(1, "Welcome to");
-	print_centered(2, "Tabby");
+	print_centered(2, "Tanka");
 #else
 	print_centered(1, "Welcome to the");
 	print_centered(2, "Haiku Boot Loader");

@@ -46,8 +46,8 @@ public:
 private:
 			void				_ShowOptionalPackages();
 			void				_LaunchDriveSetup();
-			void				_SetupTabbyDisk();
-	static	int32			_SetupTabbyDiskThread(void* data);
+			void				_SetupTankaDisk();
+	static	int32			_SetupTankaDiskThread(void* data);
 			void				_LaunchBootManager();
 			void				_DisableInterface(bool disable);
 			void				_ScanPartitions();
@@ -82,7 +82,7 @@ private:
 
 			BButton*			fBeginButton;
 			BButton*			fLaunchDriveSetupButton;
-			BButton*			fSetupTabbyDiskButton;
+			BButton*			fSetupTankaDiskButton;
 			BString				fSetupDiskPath;
 			BMenuItem*			fLaunchBootManagerItem;
 			BMenuItem*			fMakeBootableItem;

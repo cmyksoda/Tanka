@@ -8,7 +8,7 @@
  */
 
 
-// A tiny boot-progress panel for the Tabby distribution. On the FIRST boot,
+// A tiny boot-progress panel for the Tanka distribution. On the FIRST boot,
 // package activation on old PPC hardware is slow, so this shows a "setting up"
 // message on top of the bare desktop and quits once activation is done and the
 // desktop is up, then drops a marker so it never shows again.
@@ -38,7 +38,7 @@
 
 
 static const char* kDeskbarSignature = "application/x-vnd.Be-TSKB";
-static const char* kMarkerName = "tabby_first_boot_seen";
+static const char* kMarkerName = "tanka_first_boot_seen";
 static const char* kAdminDirs[] = {
 	"/boot/system/packages/administrative",
 	"/boot/home/config/packages/administrative",
@@ -160,7 +160,7 @@ class BootProgressApp : public BApplication {
 public:
 	BootProgressApp()
 		:
-		BApplication("application/x-vnd.Tabby-BootProgress"),
+		BApplication("application/x-vnd.Tanka-BootProgress"),
 		fWindow(NULL),
 		fRunner(NULL),
 		fTicks(0),

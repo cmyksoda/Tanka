@@ -6,9 +6,9 @@ service x-vnd.Haiku-app_server {
 target desktop {
 	env /system/boot/SetupEnvironment
 
-	# Tabby: show a "setting up" panel during the slow part of boot; it quits
+	# Tanka: show a "setting up" panel during the slow part of boot; it quits
 	# itself once the Deskbar (below) is up.
-	job x-vnd.Tabby-BootProgress {
+	job x-vnd.Tanka-BootProgress {
 		launch /system/apps/BootProgress
 	}
 

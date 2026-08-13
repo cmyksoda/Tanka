@@ -1,5 +1,5 @@
 /*
- * Tabby ppc: userland Apple Partition Map disk-system add-on.
+ * Tanka ppc: userland Apple Partition Map disk-system add-on.
  * Distributed under the terms of the MIT License.
  */
 

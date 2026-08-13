@@ -123,7 +123,7 @@ TBarMenuBar::TBarMenuBar(BRect frame, const char* name, TBarView* barView)
 	BBitmap* icon = NULL;
 	size_t dataSize;
 #ifdef HAIKU_DISTRO_COMPATIBILITY_COMPATIBLE
-	// Tabby: the leaf is a PNG (paw) resource; decode it to a bitmap.
+	// Tanka: the leaf is a PNG (paw) resource; decode it to a bitmap.
 	const void* data = AppResSet()->FindResource(B_PNG_FORMAT,
 		R_LeafLogoBitmap, &dataSize);
 	if (data != NULL) {

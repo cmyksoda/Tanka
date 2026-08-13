@@ -64,8 +64,8 @@ static const char* kBootManagerSignature = "application/x-vnd.Haiku-BootManager"
 const uint32 BEGIN_MESSAGE = 'iBGN';
 const uint32 SHOW_BOTTOM_MESSAGE = 'iSBT';
 const uint32 LAUNCH_DRIVE_SETUP = 'iSEP';
-const uint32 SETUP_TABBY_DISK = 'iSTD';
-const uint32 SETUP_TABBY_DONE = 'iSTd';
+const uint32 SETUP_TANKA_DISK = 'iSTD';
+const uint32 SETUP_TANKA_DONE = 'iSTd';
 const uint32 LAUNCH_BOOTMAN = 'iWBM';
 const uint32 START_SCAN = 'iSSC';
 const uint32 PACKAGE_CHECKBOX = 'iPCB';
@@ -266,9 +266,9 @@ InstallerWindow::InstallerWindow()
 		new BMessage(LAUNCH_DRIVE_SETUP));
 
 #ifdef HAIKU_DISTRO_COMPATIBILITY_COMPATIBLE
-	fSetupTabbyDiskButton = new BButton("setup_tabby_button",
-		B_TRANSLATE("Set up disk for Tabby"),
-		new BMessage(SETUP_TABBY_DISK));
+	fSetupTankaDiskButton = new BButton("setup_tanka_button",
+		B_TRANSLATE("Set up disk for Tanka"),
+		new BMessage(SETUP_TANKA_DISK));
 #endif
 
 	fLaunchBootManagerItem = new BMenuItem(B_TRANSLATE("Set up boot menu" B_UTF8_ELLIPSIS),
@@ -287,8 +287,8 @@ InstallerWindow::InstallerWindow()
 	toolsMenu->AddItem(fMakeBootableItem);
 #ifdef HAIKU_DISTRO_COMPATIBILITY_COMPATIBLE
 	toolsMenu->AddItem(new BMenuItem(
-		B_TRANSLATE("Set up disk for Tabby" B_UTF8_ELLIPSIS),
-		new BMessage(SETUP_TABBY_DISK)));
+		B_TRANSLATE("Set up disk for Tanka" B_UTF8_ELLIPSIS),
+		new BMessage(SETUP_TANKA_DISK)));
 #endif
 	toolsMenu->AddItem(fEFILoaderMenu);
 	mainMenu->AddItem(toolsMenu);
@@ -309,7 +309,7 @@ InstallerWindow::InstallerWindow()
 				.AddMenuField(fSrcMenuField, 0, 0)
 				.AddMenuField(fDestMenuField, 0, 1)
 #ifdef HAIKU_DISTRO_COMPATIBILITY_COMPATIBLE
-				.Add(fSetupTabbyDiskButton, 2, 1)
+				.Add(fSetupTankaDiskButton, 2, 1)
 				.AddGlue(2, 0)
 #else
 				.AddGlue(2, 0, 1, 2)
@@ -464,10 +464,10 @@ InstallerWindow::MessageReceived(BMessage *msg)
 		case LAUNCH_DRIVE_SETUP:
 			_LaunchDriveSetup();
 			break;
-		case SETUP_TABBY_DISK:
-			_SetupTabbyDisk();
+		case SETUP_TANKA_DISK:
+			_SetupTankaDisk();
 			break;
-		case SETUP_TABBY_DONE:
+		case SETUP_TANKA_DONE:
 		{
 			int32 setupResult = msg->GetInt32("result", -1);
 			_DisableInterface(false);
@@ -503,8 +503,8 @@ InstallerWindow::MessageReceived(BMessage *msg)
 		{
 #ifdef HAIKU_DISTRO_COMPATIBILITY_COMPATIBLE
 			BAlert* alert = new BAlert("use drive setup", B_TRANSLATE(
-				"No disk is ready to install Tabby yet.\n\n"
-				"Click \"Set up disk for Tabby\" to erase a disk and prepare "
+				"No disk is ready to install Tanka yet.\n\n"
+				"Click \"Set up disk for Tanka\" to erase a disk and prepare "
 				"it automatically - an Apple partition map with a small "
 				"boot-loader partition and a Be File System partition. Then "
 				"choose it under \"Onto\" and click \"Begin\"."),
@@ -733,12 +733,12 @@ InstallerWindow::_ShowOptionalPackages()
 
 
 void
-InstallerWindow::_SetupTabbyDisk()
+InstallerWindow::_SetupTankaDisk()
 {
 	// One-click PowerPC disk setup: erase a chosen disk and lay down the layout
-	// Tabby needs to boot (Apple partition map + a small Apple_HFS loader
+	// Tanka needs to boot (Apple partition map + a small Apple_HFS loader
 	// partition + a Haiku_BFS system partition, formatted). This reuses the
-	// tabby_install tool, then the user just picks the new volume under "Onto"
+	// tanka_install tool, then the user just picks the new volume under "Onto"
 	// and installs - the "Write boot sector" step then writes the loader.
 	BDiskDeviceRoster roster;
 
@@ -765,7 +765,7 @@ InstallerWindow::_SetupTabbyDisk()
 		BString label;
 		label.SetToFormat("%s  (%.1f GB)", path.Path(),
 			device.Size() / (1024.0 * 1024.0 * 1024.0));
-		BMessage* msg = new BMessage(SETUP_TABBY_DISK);
+		BMessage* msg = new BMessage(SETUP_TANKA_DISK);
 		msg->AddString("path", path.Path());
 		diskMenu.AddItem(new BMenuItem(label.String(), msg));
 	}
@@ -796,7 +796,7 @@ InstallerWindow::_SetupTabbyDisk()
 	// destructive - confirm
 	BString warning;
 	warning.SetToFormat(B_TRANSLATE("This will ERASE the entire disk\n\n%s\n\n"
-		"and set it up to boot Tabby (an Apple partition map with a loader "
+		"and set it up to boot Tanka (an Apple partition map with a loader "
 		"partition and a Be File System partition). All data on the disk will "
 		"be lost.\n\nContinue?"), path.String());
 	BAlert* confirm = new BAlert("confirm", warning.String(),
@@ -818,10 +818,10 @@ InstallerWindow::_SetupTabbyDisk()
 	fPackagesLayoutItem->SetVisible(false);
 	fSizeViewLayoutItem->SetVisible(false);
 	fProgressLayoutItem->SetVisible(true);
-	_SetStatusMessage(B_TRANSLATE("Setting up the disk for Tabby. This can "
+	_SetStatusMessage(B_TRANSLATE("Setting up the disk for Tanka. This can "
 		"take a minute" B_UTF8_ELLIPSIS));
 
-	thread_id thread = spawn_thread(_SetupTabbyDiskThread, "tabby-disk-setup",
+	thread_id thread = spawn_thread(_SetupTankaDiskThread, "tanka-disk-setup",
 		B_NORMAL_PRIORITY, this);
 	if (thread >= 0)
 		resume_thread(thread);
@@ -834,7 +834,7 @@ InstallerWindow::_SetupTabbyDisk()
 
 
 int32
-InstallerWindow::_SetupTabbyDiskThread(void* data)
+InstallerWindow::_SetupTankaDiskThread(void* data)
 {
 	InstallerWindow* self = (InstallerWindow*)data;
 	BMessenger messenger(self);
@@ -856,7 +856,7 @@ InstallerWindow::_SetupTabbyDiskThread(void* data)
 		messenger.SendMessage(&msg);
 	}
 	BString command;
-	command.SetToFormat("/boot/system/bin/tabby_install \"%s\"",
+	command.SetToFormat("/boot/system/bin/tanka_install \"%s\"",
 		diskPath.String());
 	int result = system(command.String());
 
@@ -883,7 +883,7 @@ InstallerWindow::_SetupTabbyDiskThread(void* data)
 		messenger.SendMessage(&msg);
 	}
 
-	BMessage done(SETUP_TABBY_DONE);
+	BMessage done(SETUP_TANKA_DONE);
 	done.AddInt32("result", result);
 	messenger.SendMessage(&done);
 	return 0;
@@ -955,7 +955,7 @@ InstallerWindow::_DisableInterface(bool disable)
 	fSrcMenuField->SetEnabled(!disable);
 	fDestMenuField->SetEnabled(!disable);
 #ifdef HAIKU_DISTRO_COMPATIBILITY_COMPATIBLE
-	fSetupTabbyDiskButton->SetEnabled(!disable);
+	fSetupTankaDiskButton->SetEnabled(!disable);
 #endif
 }
 

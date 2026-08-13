@@ -109,8 +109,8 @@ public:
 			fIgnorePaths.insert("rr_moved");
 			fIgnorePaths.insert("boot.catalog");
 			fIgnorePaths.insert("haiku-boot-floppy.image");
-			// Tabby PowerPC live/installer-CD boot artifacts (medium only):
-			fIgnorePaths.insert("tabby-loader.hfs");
+			// Tanka PowerPC live/installer-CD boot artifacts (medium only):
+			fIgnorePaths.insert("tanka-loader.hfs");
 			fIgnorePaths.insert("haikuloader.elf");
 			fIgnorePaths.insert("boot");
 			fIgnorePaths.insert("ppc");

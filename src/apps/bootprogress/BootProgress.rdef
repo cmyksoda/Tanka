@@ -1,5 +1,5 @@
 
-resource app_signature "application/x-vnd.Tabby-BootProgress";
+resource app_signature "application/x-vnd.Tanka-BootProgress";
 
 resource app_flags B_SINGLE_LAUNCH | B_BACKGROUND_APP;
 
@@ -12,5 +12,5 @@ resource app_version {
 	internal = 0,
 
 	short_info = "BootProgress",
-	long_info  = "Tabby first-boot progress"
+	long_info  = "Tanka first-boot progress"
 };

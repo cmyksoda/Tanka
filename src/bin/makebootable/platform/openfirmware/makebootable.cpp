@@ -15,7 +15,7 @@
  * add-on). The source is, in order of preference:
  *   1. the loader partition of the currently running system (installed->installed);
  *   2. the prebuilt loader blob shipped on the install medium
- *      (/boot/tabby-loader.hfs) - used when booting a live/installer CD, which
+ *      (/boot/tanka-loader.hfs) - used when booting a live/installer CD, which
  *      is a CHRP disc with no Apple_HFS partition to clone.
  *
  * Usage: makebootable [ --dry-run ] <target-directory> ...
@@ -233,7 +233,7 @@ make_bootable(const char* directory, bool dryRun)
 	BDiskDeviceRoster roster;
 
 	// The target may be given as a mounted volume's directory (the Installer
-	// passes the install mount point) or as a raw disk device path (the Tabby
+	// passes the install mount point) or as a raw disk device path (the Tanka
 	// "Set up disk" step passes the disk directly, avoiding any mount).
 	BDiskDevice targetDisk;
 	BPartition* targetHFS = NULL;
@@ -288,7 +288,7 @@ make_bootable(const char* directory, bool dryRun)
 		}
 		sourceSize = sourceHFS->Size();
 	} else {
-		static const char* const kLoaderBlob = "/boot/tabby-loader.hfs";
+		static const char* const kLoaderBlob = "/boot/tanka-loader.hfs";
 		struct stat blobStat;
 		if (stat(kLoaderBlob, &blobStat) != 0) {
 			fprintf(stderr, "Error: no HFS loader partition on the boot disk "

@@ -75,7 +75,7 @@
 #include "HyperTextView.h"
 #include "Utilities.h"
 
-#include "TabbyVersion.h"
+#include "TankaVersion.h"
 
 #include "Credits.h"
 
@@ -396,7 +396,7 @@ AboutWindow::AboutWindow()
 	:
 	BWindow(BRect(0, 0, kWindowWidth, kWindowHeight),
 		#ifdef HAIKU_DISTRO_COMPATIBILITY_COMPATIBLE
-		B_TRANSLATE("About Tabby"), B_TITLED_WINDOW,
+		B_TRANSLATE("About Tanka"), B_TITLED_WINDOW,
 #else
 		B_TRANSLATE("About this system"), B_TITLED_WINDOW,
 #endif
@@ -988,10 +988,10 @@ SysInfoView::_BaseHeight()
 BString
 SysInfoView::_GetOSVersion()
 {
-	// Tabby version line: the release version (from TabbyVersion.h) plus an
+	// Tanka version line: the release version (from TankaVersion.h) plus an
 	// automatic build number. The build number is taken from the git-based
 	// Haiku revision baked in at build time ("hrevNNNNN+C+dirty"), where C is
-	// the commit count since the base Haiku hrev tag - i.e. Tabby's own commits
+	// the commit count since the base Haiku hrev tag - i.e. Tanka's own commits
 	// on top of Haiku. A trailing '+' means the tree had uncommitted changes.
 	BString build;
 	bool dirty = false;
@@ -1017,15 +1017,15 @@ SysInfoView::_GetOSVersion()
 		}
 	}
 
-	BString release(TABBY_VERSION_RELEASE);
-	if (BString(TABBY_VERSION_CODENAME).Length() > 0)
-		release << " \"" TABBY_VERSION_CODENAME "\"";
+	BString release(TANKA_VERSION_RELEASE);
+	if (BString(TANKA_VERSION_CODENAME).Length() > 0)
+		release << " \"" TANKA_VERSION_CODENAME "\"";
 
 	BString version;
 	if (build.IsEmpty()) {
-		version.SetToFormat(B_TRANSLATE("Version: Tabby %s"), release.String());
+		version.SetToFormat(B_TRANSLATE("Version: Tanka %s"), release.String());
 	} else {
-		version.SetToFormat(B_TRANSLATE("Version: Tabby %s (build %s%s)"),
+		version.SetToFormat(B_TRANSLATE("Version: Tanka %s (build %s%s)"),
 			release.String(), build.String(), dirty ? "+" : "");
 	}
 
@@ -1036,9 +1036,9 @@ SysInfoView::_GetOSVersion()
 BString
 SysInfoView::_GetABIVersion()
 {
-	// Tabby: show which Haiku revision this build is based on, plus the ABI/arch
+	// Tanka: show which Haiku revision this build is based on, plus the ABI/arch
 	// name. The base Haiku hrev is the revision string up to the first '+'; the
-	// part after it is folded into Tabby's build number (see _GetOSVersion).
+	// part after it is folded into Tanka's build number (see _GetOSVersion).
 	BString base;
 	const char* hrev = __get_haiku_revision();
 	if (hrev != NULL && hrev[0] != '\0') {
@@ -1582,24 +1582,24 @@ AboutView::_CreateCreditsView()
 		B_PLAIN_BORDER);
 
 #ifdef HAIKU_DISTRO_COMPATIBILITY_COMPATIBLE
-	// Tabby distribution disclaimer (per Haiku distribution guidelines).
-	BFont tabbyFont(be_bold_font);
-	tabbyFont.SetSize(tabbyFont.Size() + 4);
-	fCreditsView->SetFontAndColor(&tabbyFont, B_FONT_ALL, &fHaikuGreenColor);
-	fCreditsView->Insert("Tabby\n");
+	// Tanka distribution disclaimer (per Haiku distribution guidelines).
+	BFont tankaFont(be_bold_font);
+	tankaFont.SetSize(tankaFont.Size() + 4);
+	fCreditsView->SetFontAndColor(&tankaFont, B_FONT_ALL, &fHaikuGreenColor);
+	fCreditsView->Insert("Tanka\n");
 	fCreditsView->SetFontAndColor(be_plain_font, B_FONT_ALL, &fTextColor);
 	fCreditsView->Insert(B_TRANSLATE(
-		"Tabby is based on Haiku, but it is not the official distribution. "
+		"Tanka is based on Haiku, but it is not the official distribution. "
 		"For information about the official Haiku project, please visit "));
 	fCreditsView->SetFontAndColor(be_plain_font, B_FONT_ALL, &fLinkColor);
 	fCreditsView->InsertHyperText("https://haiku-os.org",
 		new URLAction("https://haiku-os.org"));
 	fCreditsView->SetFontAndColor(be_plain_font, B_FONT_ALL, &fTextColor);
 	fCreditsView->Insert(B_TRANSLATE(
-		".\nThe Tabby Maintainers are not associated with the Haiku "
+		".\nThe Tanka Maintainers are not associated with the Haiku "
 		"project.\n\nFor information and support, please visit the "));
 	fCreditsView->SetFontAndColor(be_plain_font, B_FONT_ALL, &fLinkColor);
-	fCreditsView->InsertHyperText("Tabby GitHub repository",
+	fCreditsView->InsertHyperText("Tanka GitHub repository",
 		new URLAction("https://github.com/ActionRetro/Haiku-PowerPC"));
 	fCreditsView->SetFontAndColor(be_plain_font, B_FONT_ALL, &fTextColor);
 	fCreditsView->Insert(B_TRANSLATE(

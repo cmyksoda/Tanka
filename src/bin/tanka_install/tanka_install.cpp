@@ -1,5 +1,5 @@
 /*
- * tabby_install - headless installer/validation tool for the Tabby ppc live CD.
+ * tanka_install - headless installer/validation tool for the Tanka ppc live CD.
  *
  * Exercises the (previously untested) apple partition write-support and, in
  * later phases, BFS format + system copy + makebootable, so the install path
@@ -21,7 +21,7 @@
 #include <stdio.h>
 #include <string.h>
 
-#define LOG(fmt, ...) do { printf("TABBY_INSTALL: " fmt "\n", ##__VA_ARGS__); \
+#define LOG(fmt, ...) do { printf("TANKA_INSTALL: " fmt "\n", ##__VA_ARGS__); \
 	fflush(stdout); } while (0)
 
 static const off_t kMB = 1024LL * 1024LL;
@@ -101,7 +101,7 @@ partition_disk(BDiskDevice& device, const char* kAPM)
 	if (bestSize <= 0) { LOG("no space left for BFS"); return 1; }
 
 	off_t bfsOffset = bestOffset, bfsSize = bestSize;
-	BString bfsName("Tabby");
+	BString bfsName("Tanka");
 	st = device.ValidateCreateChild(&bfsOffset, &bfsSize, "Haiku_BFS", &bfsName,
 		"");
 	if (st != B_OK) { LOG("ValidateCreateChild(BFS): %s", strerror(st)); return 1; }
@@ -146,7 +146,7 @@ format_bfs(BDiskDeviceRoster& roster, const char* targetPath)
 		(long long)bfs->Offset(), (long long)bfs->Size(),
 		bfs->CanInitialize("Be File System"));
 
-	BString name("Tabby");
+	BString name("Tanka");
 	st = bfs->ValidateInitialize("Be File System", &name, NULL);
 	if (st != B_OK) { LOG("ValidateInitialize(bfs): %s", strerror(st)); return 1; }
 	LOG("bfs validated, name='%s'", name.String());
@@ -166,7 +166,7 @@ int
 main(int argc, char** argv)
 {
 	const char* targetPath = argc > 1 ? argv[1] : "/dev/disk/ata/0/master/raw";
-	LOG("=== Tabby headless install (phase A: partition) -> %s ===", targetPath);
+	LOG("=== Tanka headless install (phase A: partition) -> %s ===", targetPath);
 
 	BDiskDeviceRoster roster;
 

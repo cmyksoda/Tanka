@@ -1167,7 +1167,7 @@ try_drivers(DriverEntryList& list)
 				// we have a driver
 				dprintf("loaded driver %s\n", entry->path);
 
-				// Show boot progress on the splash (Tabby): the driver leaf name.
+				// Show boot progress on the splash (Tanka): the driver leaf name.
 				const char* leaf = strrchr(entry->path, '/');
 				char progress[64];
 				snprintf(progress, sizeof(progress), "Loading %s",

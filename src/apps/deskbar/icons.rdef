@@ -1,7 +1,7 @@
 
 #include "icons.h"
 
-// Haiku leaf (official builds) and the Tabby paw PNG (compatible builds) share
+// Haiku leaf (official builds) and the Tanka paw PNG (compatible builds) share
 // R_LeafLogoBitmap but differ by resource type; BarMenuBar picks per build.
 resource(R_LeafLogoBitmap) vector_icon {
 	$"6E6369660102010602438798C0E5A13DF937406BAE4D330E4CA0420000AAFFFF"

@@ -1,0 +1,8 @@
+SubDir HAIKU_TOP src bin tanka_install ;
+
+UsePrivateHeaders storage ;
+
+Application tanka_install :
+	tanka_install.cpp
+	: be [ TargetLibsupc++ ]
+	;

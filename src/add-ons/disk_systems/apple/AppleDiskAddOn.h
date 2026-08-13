@@ -1,5 +1,5 @@
 /*
- * Tabby ppc: userland disk-system add-on for the Apple Partition Map, so
+ * Tanka ppc: userland disk-system add-on for the Apple Partition Map, so
  * DriveSetup/Installer can initialize + partition Apple maps (the kernel
  * partitioning_systems/apple module does the actual on-disk writing).
  * Distributed under the terms of the MIT License.
