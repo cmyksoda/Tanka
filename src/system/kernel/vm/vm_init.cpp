@@ -44,9 +44,14 @@ unmap_and_free_physical_pages(VMTranslationMap* map, addr_t start, addr_t end)
 			if (page != NULL && page->State() != PAGE_STATE_FREE
 					&& page->State() != PAGE_STATE_CLEAR
 					&& page->State() != PAGE_STATE_UNUSED
+					&& page->State() != PAGE_STATE_WIRED
 					&& !page->IsMapped()) {
 				// a mapped page is owned by an area already; the boot loader
-				// mapping is merely an alias of it, so only unmap it below
+				// mapping is merely an alias of it, so only unmap it below.
+				// A WIRED page is a physical reservation (on the Wii: the
+				// scanout framebuffer, libogc arena and IOS regions, all
+				// still 1:1-mapped by the loader handoff) - freeing it hands
+				// live hardware memory to the page allocator.
 				DEBUG_PAGE_ACCESS_START(page);
 				vm_page_free_etc(NULL, page, &reservation);
 			}
