@@ -181,8 +181,8 @@ allocate_trampoline(image_t* image, TrampolinePool* pool, size_t maxCount)
 		}
 
 		if (result == NULL) {
-			printf("runtime_loader: no PLT trampoline pool within branch range "
-				"of %s\n", image->path);
+			FATAL("no PLT trampoline pool within branch range of %s\n",
+				image->path);
 			return NULL;
 		}
 
@@ -203,6 +203,8 @@ static int
 relocate_rela(image_t* rootImage, image_t* image, Elf32_Rela* rel,
 	size_t relLength, SymbolLookupCache* cache, TrampolinePool* pool)
 {
+	size_t noneCount = 0;
+
 	for (size_t i = 0; i < relLength / sizeof(Elf32_Rela); i++) {
 		int type = ELF32_R_TYPE(rel[i].r_info);
 		int symIndex = ELF32_R_SYM(rel[i].r_info);
@@ -231,10 +233,8 @@ relocate_rela(image_t* rootImage, image_t* image, Elf32_Rela* rel,
 					status_t status = resolve_symbol(rootImage, image, sym,
 						cache, &S, &symbolImage);
 					if (status != B_OK) {
-						TRACE(("resolve symbol \"%s\" returned: %" B_PRId32 "\n",
-							SYMNAME(image, sym), status));
-						printf("resolve symbol \"%s\" returned: %" B_PRId32 "\n",
-							SYMNAME(image, sym), status);
+						FATAL("%s: resolve symbol \"%s\" returned: %" B_PRId32
+							"\n", image->name, SYMNAME(image, sym), status);
 						return status;
 					}
 				}
@@ -247,6 +247,7 @@ relocate_rela(image_t* rootImage, image_t* image, Elf32_Rela* rel,
 
 		switch (type) {
 			case R_PPC_NONE:
+				noneCount++;
 				break;
 
 			case R_PPC_ADDR32:
@@ -258,7 +259,8 @@ relocate_rela(image_t* rootImage, image_t* image, Elf32_Rela* rel,
 			case R_PPC_ADDR16:
 			case R_PPC_UADDR16:
 				if (!write_half16_check(P, S + A)) {
-					printf("R_PPC_ADDR16 overflow\n");
+					FATAL("%s: R_PPC_ADDR16 overflow: entry %lu value %#lx\n",
+						image->name, (unsigned long)i, (unsigned long)(S + A));
 					return B_BAD_DATA;
 				}
 				break;
@@ -277,14 +279,17 @@ relocate_rela(image_t* rootImage, image_t* image, Elf32_Rela* rel,
 
 			case R_PPC_ADDR24:
 				if (!write_low24_check(P, (S + A) >> 2)) {
-					printf("R_PPC_ADDR24 overflow\n");
+					FATAL("%s: R_PPC_ADDR24 overflow: entry %lu value %#lx\n",
+						image->name, (unsigned long)i, (unsigned long)(S + A));
 					return B_BAD_DATA;
 				}
 				break;
 
 			case R_PPC_REL24:
 				if (!write_low24_check(P, (S + A - P) >> 2)) {
-					printf("R_PPC_REL24 overflow\n");
+					FATAL("%s: R_PPC_REL24 overflow: entry %lu value %#lx\n",
+						image->name, (unsigned long)i,
+						(unsigned long)(S + A - P));
 					return B_BAD_DATA;
 				}
 				break;
@@ -310,8 +315,8 @@ relocate_rela(image_t* rootImage, image_t* image, Elf32_Rela* rel,
 					uint32* island = allocate_trampoline(image, pool,
 						image->pltrel_len / sizeof(Elf32_Rela) + 1);
 					if (island == NULL) {
-						printf("R_PPC_JMP_SLOT: no trampoline for far target "
-							"%p\n", (void*)target);
+						FATAL("%s: R_PPC_JMP_SLOT: no trampoline for far "
+							"target %p\n", image->name, (void*)target);
 						return B_NOT_SUPPORTED;
 					}
 
@@ -325,8 +330,9 @@ relocate_rela(image_t* rootImage, image_t* image, Elf32_Rela* rel,
 					jumpOffset = (addr_t)island - P;
 					if ((jumpOffset & 0xfe000000) != 0
 						&& (~jumpOffset & 0xfe000000) != 0) {
-						printf("R_PPC_JMP_SLOT: trampoline out of branch range "
-							"(offset %p)\n", (void*)jumpOffset);
+						FATAL("%s: R_PPC_JMP_SLOT: trampoline out of branch "
+							"range (offset %p)\n", image->name,
+							(void*)jumpOffset);
 						return B_NOT_SUPPORTED;
 					}
 				}
@@ -336,9 +342,23 @@ relocate_rela(image_t* rootImage, image_t* image, Elf32_Rela* rel,
 			}
 
 			default:
-				printf("arch_relocate_image: unhandled relocation type %d\n",
-					type);
+			{
+				// Every type the whole shipped tree contains is handled, so a
+				// bogus type here means the entry bytes themselves are bad;
+				// dump the raw neighborhood to compare against the file.
+				size_t count = relLength / sizeof(Elf32_Rela);
+				FATAL("%s: unhandled relocation type %d, entry %lu of %lu "
+					"at %p\n", image->name, type, (unsigned long)i,
+					(unsigned long)count, &rel[i]);
+				size_t first = i >= 4 ? i - 4 : 0;
+				for (size_t j = first; j < first + 9 && j < count; j++) {
+					const uint32* raw = (const uint32*)&rel[j];
+					dprintf("  rela[%lu] = %08lx %08lx %08lx\n",
+						(unsigned long)j, (unsigned long)raw[0],
+						(unsigned long)raw[1], (unsigned long)raw[2]);
+				}
 				return B_BAD_DATA;
+			}
 		}
 
 		// On the out-of-order PPC the I-cache is not coherent with the D-cache,
@@ -348,6 +368,14 @@ relocate_rela(image_t* rootImage, image_t* image, Elf32_Rela* rel,
 		// syncs itself; NONE writes nothing.
 		if (type != R_PPC_NONE && type != R_PPC_JMP_SLOT)
 			sync_icache_for_relocation(P, sizeof(uint32));
+	}
+
+	// A large count here means whole zeroed pages sailed through as R_PPC_NONE
+	// (relocations silently skipped) - the quiet twin of the garbage-type
+	// failure. libbnetapi.so legitimately has 19.
+	if (noneCount != 0) {
+		TRACE(("runtime_loader: %s: %lu R_PPC_NONE entries\n", image->name,
+			(unsigned long)noneCount));
 	}
 
 	return B_OK;
@@ -360,6 +388,12 @@ arch_relocate_image(image_t* rootImage, image_t* image,
 {
 	TrampolinePool pool = { NULL, NULL, false };
 	status_t status;
+
+	TRACE(("runtime_loader: relocate %s: rela %p+%lu pltrel %p+%lu "
+		"delta %#lx\n", image->name, image->rela,
+		(unsigned long)image->rela_len, image->pltrel,
+		(unsigned long)image->pltrel_len,
+		(unsigned long)image->regions[0].delta));
 
 	// PowerPC uses RELA relocations exclusively (no REL).
 	if (image->rela) {

@@ -26,6 +26,7 @@
 #include <util/DoublyLinkedList.h>
 #include <vm/vm.h>
 #include <vm/VMAddressSpace.h>
+#include <vm/VMTranslationMap.h>
 
 #include "SmallObjectCache.h"
 #include "HashedObjectCache.h"
@@ -1337,6 +1338,20 @@ object_cache_alloc(object_cache* cache, uint32 flags)
 
 #if PARANOID_KERNEL_FREE
 	if (cache->object_size >= (sizeof(void*) * 2)) {
+		if (*(uint32*)object != 0xdeadbeef) {
+			// Session-9: self-document the clobber (content + physical page)
+			// before the assert fires - the byte pattern names the writer.
+			uint32* w = (uint32*)object;
+			phys_addr_t pa = 0;
+			uint32 pflags = 0;
+			VMAddressSpace::Kernel()->TranslationMap()->QueryInterrupt(
+				(addr_t)object & ~(addr_t)(B_PAGE_SIZE - 1), &pa, &pflags);
+			dprintf("slab clobber at %p (page pa %#" B_PRIxPHYSADDR "): "
+				"%08" B_PRIx32 " %08" B_PRIx32 " %08" B_PRIx32 " %08"
+				B_PRIx32 " %08" B_PRIx32 " %08" B_PRIx32 " %08" B_PRIx32
+				" %08" B_PRIx32 "\n", object, pa, w[0], w[1], w[2], w[3],
+				w[4], w[5], w[6], w[7]);
+		}
 		ASSERT_ALWAYS_PRINT(*(uint32*)object == 0xdeadbeef,
 			"object %p @! slab_object %p", object, object);
 	}
