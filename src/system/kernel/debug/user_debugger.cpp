@@ -14,7 +14,9 @@
 #include <algorithm>
 
 #include <arch/debug.h>
+#include <arch/thread.h>
 #include <arch/user_debugger.h>
+#include <kimage.h>
 #include <core_dump.h>
 #include <cpu.h>
 #include <debugger.h>
@@ -817,6 +819,18 @@ thread_hit_debug_event(debug_debugger_message event, const void *message,
 }
 
 
+#ifdef __POWERPC__
+static bool
+print_crash_team_image(struct image* image, void* cookie)
+{
+	image_info& info = image->info.basic_info;
+	dprintf("  image %" B_PRId32 " %s: text %p size %" B_PRId32 "\n",
+		info.id, info.name, info.text, info.text_size);
+	return false;
+}
+#endif
+
+
 static status_t
 thread_hit_serious_debug_event(debug_debugger_message event,
 	const void *message, int32 messageSize)
@@ -828,6 +842,38 @@ thread_hit_serious_debug_event(debug_debugger_message event,
 		dprintf("thread_hit_serious_debug_event(): Failed to install debugger: "
 			"thread: %" B_PRId32 " (%s): %s\n", thread->id, thread->name,
 			strerror(error));
+#ifdef __POWERPC__
+		// Early in boot no debugger can attach, so name the fault here: the
+		// exception vector, PC, fault address and link register, plus the
+		// team's image map so the addresses resolve against the binaries.
+		struct iframe* frame = ppc_get_user_iframe();
+		if (frame != NULL) {
+			dprintf("  event %" B_PRId32 ": vector %#" B_PRIx32 " srr0 %#"
+				B_PRIx32 " srr1 %#" B_PRIx32 " dar %#" B_PRIx32 " dsisr %#"
+				B_PRIx32 " lr %#" B_PRIx32 " r1 %#" B_PRIx32 "\n",
+				(int32)event, frame->vector, frame->srr0, frame->srr1,
+				frame->dar, frame->dsisr, frame->lr, frame->r1);
+		}
+		image_iterate_through_team_images(thread->team->id,
+			print_crash_team_image, NULL);
+		// SysV PPC back-chain walk: 0(sp) links the frames, 4(frame) holds
+		// the saved LR - names the real callers (the iframe lr is usually
+		// clobbered by the PIC bcl prologue).
+		if (frame != NULL) {
+			uint32 fp = frame->r1;
+			for (int depth = 0; depth < 8 && fp != 0 && (fp & 3) == 0;
+					depth++) {
+				uint32 words[2];
+				if (user_memcpy(words, (void*)(addr_t)fp, sizeof(words))
+						!= B_OK) {
+					break;
+				}
+				dprintf("  frame %d: sp %#" B_PRIx32 " ret %#" B_PRIx32 "\n",
+					depth, fp, words[1]);
+				fp = words[0];
+			}
+		}
+#endif
 		return error;
 	}
 
