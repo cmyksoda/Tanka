@@ -528,6 +528,14 @@ register_image(image_t* image, int fd, const char* path)
 		}
 	}
 
+	// ppc userland images are linked as a single merged RWE segment, so every
+	// region is writable and the text range would stay empty; report the
+	// merged segment as text too, or address-to-image lookups can't work.
+	if (textBase == 0 && dataBase != 0) {
+		textBase = dataBase;
+		textEnd = dataEnd;
+	}
+
 	strlcpy(info.basic_info.name, path, sizeof(info.basic_info.name));
 	info.basic_info.text = (void*)textBase;
 	info.basic_info.text_size = textEnd - textBase;
