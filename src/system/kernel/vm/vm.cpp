@@ -2435,6 +2435,7 @@ _vm_map_file(team_id team, const char* name, void** _address,
 
 	cache->Unlock();
 
+#ifndef __POWERPC__
 	if (status == B_OK) {
 		// TODO: this probably deserves a smarter solution, e.g. probably
 		// trigger prefetch somewhere else.
@@ -2445,6 +2446,7 @@ _vm_map_file(team_id team, const char* name, void** _address,
 		if (cache->page_count < (prefetch / B_PAGE_SIZE))
 			cache_prefetch_vnode(vnode, offset, prefetch);
 	}
+#endif	// eager COW doubles every prefetched page; too rich for the Wii
 
 	if (status != B_OK)
 		return status;
@@ -4188,6 +4190,14 @@ vm_soft_fault(VMAddressSpace* addressSpace, addr_t originalAddress,
 		// We have the area, it was a valid access, so let's try to resolve the
 		// page fault now.
 		// At first, the top most cache from the area is investigated.
+
+#ifdef __POWERPC__
+		// Dolphin ignores PTE write protection: copy on data reads so stores
+		// can't land in shared pages. Text stays shared to fit swapless 88 MB.
+		if (!context.isWrite && !isExecute && (protection
+				& (B_WRITE_AREA | (isUser ? 0 : B_KERNEL_WRITE_AREA))) != 0)
+			context.isWrite = true;
+#endif
 
 		context.Prepare(vm_area_get_locked_cache(area),
 			address - area->Base() + area->cache_offset);
