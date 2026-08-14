@@ -33,6 +33,15 @@ __throw_bad_array_new_length()
 	abort();
 }
 
+
+// GCC 13's eh_alloc.o (GLIBCXX_TUNABLES parsing) needs this libstdc++-only
+// thrower; hidden, so the real libstdc++.so export is never shadowed.
+extern "C++" __attribute__((noreturn, visibility("hidden"))) void
+__throw_out_of_range_fmt(const char*, ...)
+{
+	abort();
+}
+
 }	// namespace std
 
 #endif	// __powerpc__
