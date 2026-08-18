@@ -771,8 +771,10 @@ NetServer::_ConfigureInterfacesFromSettings(BStringList& devicesSet,
 void
 NetServer::_BringUpInterfaces()
 {
-	// we need a socket to talk to the networking stack
-	if (!_IsValidFamily(AF_LINK)) {
+	// We need a socket to talk to the networking stack; keeping it open also
+	// pins the stack, which KDEBUG kernels unload at zero open sockets.
+	FileDescriptorCloser stackSocket(::socket(AF_LINK, SOCK_DGRAM, 0));
+	if (!stackSocket.IsSet()) {
 		fprintf(stderr, "%s: The networking stack doesn't seem to be "
 			"available.\n", Name());
 		Quit();
