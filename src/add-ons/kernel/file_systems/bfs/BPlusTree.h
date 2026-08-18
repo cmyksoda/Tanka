@@ -461,6 +461,8 @@ BPlusTree::Insert(Transaction& transaction, int32 key, off_t value)
 {
 	if (fHeader.DataType() != BPLUSTREE_INT32_TYPE)
 		return B_BAD_TYPE;
+	// the tree stores numeric keys in file system byte order
+	bfs_convert_index_key(B_INT32_TYPE, &key, sizeof(key));
 	return Insert(transaction, (uint8*)&key, sizeof(key), value);
 }
 
@@ -470,6 +472,8 @@ BPlusTree::Insert(Transaction& transaction, uint32 key, off_t value)
 {
 	if (fHeader.DataType() != BPLUSTREE_UINT32_TYPE)
 		return B_BAD_TYPE;
+	// the tree stores numeric keys in file system byte order
+	bfs_convert_index_key(B_UINT32_TYPE, &key, sizeof(key));
 	return Insert(transaction, (uint8*)&key, sizeof(key), value);
 }
 
@@ -479,6 +483,8 @@ BPlusTree::Insert(Transaction& transaction, int64 key, off_t value)
 {
 	if (fHeader.DataType() != BPLUSTREE_INT64_TYPE)
 		return B_BAD_TYPE;
+	// the tree stores numeric keys in file system byte order
+	bfs_convert_index_key(B_INT64_TYPE, &key, sizeof(key));
 	return Insert(transaction, (uint8*)&key, sizeof(key), value);
 }
 
@@ -488,6 +494,8 @@ BPlusTree::Insert(Transaction& transaction, uint64 key, off_t value)
 {
 	if (fHeader.DataType() != BPLUSTREE_UINT64_TYPE)
 		return B_BAD_TYPE;
+	// the tree stores numeric keys in file system byte order
+	bfs_convert_index_key(B_UINT64_TYPE, &key, sizeof(key));
 	return Insert(transaction, (uint8*)&key, sizeof(key), value);
 }
 
@@ -497,6 +505,8 @@ BPlusTree::Insert(Transaction& transaction, float key, off_t value)
 {
 	if (fHeader.DataType() != BPLUSTREE_FLOAT_TYPE)
 		return B_BAD_TYPE;
+	// the tree stores numeric keys in file system byte order
+	bfs_convert_index_key(B_FLOAT_TYPE, &key, sizeof(key));
 	return Insert(transaction, (uint8*)&key, sizeof(key), value);
 }
 
@@ -506,6 +516,8 @@ BPlusTree::Insert(Transaction& transaction, double key, off_t value)
 {
 	if (fHeader.DataType() != BPLUSTREE_DOUBLE_TYPE)
 		return B_BAD_TYPE;
+	// the tree stores numeric keys in file system byte order
+	bfs_convert_index_key(B_DOUBLE_TYPE, &key, sizeof(key));
 	return Insert(transaction, (uint8*)&key, sizeof(key), value);
 }
 #endif // !_BOOT_MODE

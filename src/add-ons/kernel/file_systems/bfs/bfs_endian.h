@@ -45,4 +45,61 @@
 	//		a major pain.
 #endif
 
+
+#ifdef __cplusplus
+
+// Numeric index keys of the expected size are stored in file system byte order.
+inline bool
+bfs_is_numeric_index_key(uint32 type, size_t length)
+{
+	switch (type) {
+		case B_INT32_TYPE:
+		case B_UINT32_TYPE:
+		case B_FLOAT_TYPE:
+			return length == sizeof(int32);
+		case B_INT64_TYPE:
+		case B_UINT64_TYPE:
+		case B_DOUBLE_TYPE:
+			return length == sizeof(int64);
+	}
+	return false;
+}
+
+
+// In-place host<->file system conversion (its own inverse); strings untouched.
+inline void
+bfs_convert_index_key(uint32 type, void* key, size_t length)
+{
+#ifndef BFS_NATIVE_ENDIAN
+	if (!bfs_is_numeric_index_key(type, length))
+		return;
+
+	uint8* bytes = (uint8*)key;
+	for (size_t i = 0, j = length - 1; i < j; i++, j--) {
+		uint8 temp = bytes[i];
+		bytes[i] = bytes[j];
+		bytes[j] = temp;
+	}
+#endif
+}
+
+
+// Same, but converts into buffer (sized for the largest key); returns the key.
+inline const uint8*
+bfs_convert_index_key(uint32 type, const uint8* key, size_t length,
+	void* buffer)
+{
+#ifndef BFS_NATIVE_ENDIAN
+	if (key != NULL && bfs_is_numeric_index_key(type, length)) {
+		uint8* bytes = (uint8*)buffer;
+		for (size_t i = 0; i < length; i++)
+			bytes[i] = key[length - 1 - i];
+		return bytes;
+	}
+#endif
+	return key;
+}
+
+#endif	// __cplusplus
+
 #endif	/* BFS_ENDIAN_H */

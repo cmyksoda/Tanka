@@ -256,6 +256,12 @@ Index::Update(Transaction& transaction, const char* name, int32 type,
 	if (tree == NULL)
 		return B_BAD_VALUE;
 
+	// the tree stores numeric keys in file system byte order
+	uint8 oldKeyBuffer[sizeof(int64)];
+	uint8 newKeyBuffer[sizeof(int64)];
+	oldKey = bfs_convert_index_key(type, oldKey, oldLength, oldKeyBuffer);
+	newKey = bfs_convert_index_key(type, newKey, newLength, newKeyBuffer);
+
 	// remove the old key from the tree
 
 	Node()->WriteLockInTransaction(transaction);

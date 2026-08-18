@@ -766,6 +766,8 @@ CheckVisitor::_AddInodeToIndex(Inode* inode)
 			size_t keyLength = sizeof(key);
 			if (inode->ReadAttribute(index->name, B_ANY_TYPE, 0, key,
 					&keyLength) == B_OK) {
+				// the tree stores numeric keys in file system byte order
+				bfs_convert_index_key(index->inode->Type(), key, keyLength);
 				status = tree->Insert(transaction, key, keyLength, inode->ID());
 			}
 		}
