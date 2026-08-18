@@ -12,6 +12,7 @@
 #include <stdio.h>
 #include <unistd.h>
 
+#include <ByteOrder.h>
 #include <KernelExport.h>
 #include <kernel.h>
 #include <lock.h>
@@ -68,36 +69,45 @@ struct console_info {
 //  7 - black
 //  8-15 - same but bright (we're ignoring those)
 
+// Pixels are little-endian words in every framebuffer Haiku drives (and what
+// app_server writes byte-wise as B,G,R,X); render_glyph() copies these bytes as
+// they sit in memory, so store them in that order on big-endian hosts too.
 static uint8 sPalette8[] = {
 	63, 32, 52, 70, 42, 88, 67, 0,
 };
 static uint16 sPalette15[] = {
 	// 0bbbbbgggggrrrrr (5-5-5)
-	0x7fff, 0x1993, 0x2660, 0x0273, 0x6400, 0x390f, 0x6ea0, 0x0000,
+	B_HOST_TO_LENDIAN_INT16(0x7fff), B_HOST_TO_LENDIAN_INT16(0x1993),
+	B_HOST_TO_LENDIAN_INT16(0x2660), B_HOST_TO_LENDIAN_INT16(0x0273),
+	B_HOST_TO_LENDIAN_INT16(0x6400), B_HOST_TO_LENDIAN_INT16(0x390f),
+	B_HOST_TO_LENDIAN_INT16(0x6ea0), B_HOST_TO_LENDIAN_INT16(0x0000),
 };
 static uint16 sPalette16[] = {
 	// bbbbbggggggrrrrr (5-6-5)
-	0xffff, 0x3333, 0x4cc0, 0x04d3, 0xc800, 0x722f, 0xdd40, 0x0000,
+	B_HOST_TO_LENDIAN_INT16(0xffff), B_HOST_TO_LENDIAN_INT16(0x3333),
+	B_HOST_TO_LENDIAN_INT16(0x4cc0), B_HOST_TO_LENDIAN_INT16(0x04d3),
+	B_HOST_TO_LENDIAN_INT16(0xc800), B_HOST_TO_LENDIAN_INT16(0x722f),
+	B_HOST_TO_LENDIAN_INT16(0xdd40), B_HOST_TO_LENDIAN_INT16(0x0000),
 };
 static uint32 sPalette24[] = {
-	0xffffff,	// white
-	0x336698,	// blue
-	0x4e9a00,	// green
-	0x06989a,	// cyan
-	0xcc0000,	// red
-	0x73447b,	// magenta
-	0xdaa800,	// yellow
-	0x000000,	// black
+	B_HOST_TO_LENDIAN_INT32(0xffffff),	// white
+	B_HOST_TO_LENDIAN_INT32(0x336698),	// blue
+	B_HOST_TO_LENDIAN_INT32(0x4e9a00),	// green
+	B_HOST_TO_LENDIAN_INT32(0x06989a),	// cyan
+	B_HOST_TO_LENDIAN_INT32(0xcc0000),	// red
+	B_HOST_TO_LENDIAN_INT32(0x73447b),	// magenta
+	B_HOST_TO_LENDIAN_INT32(0xdaa800),	// yellow
+	B_HOST_TO_LENDIAN_INT32(0x000000),	// black
 };
 static uint32 sPalette30[] = {
-	0x3fcff3fc,	// white
-	0x0cc66260,	// blue
-	0x1389a000,	// green
-	0x01898268,	// cyan
-	0x33000000,	// red
-	0x1cc441ec,	// magenta
-	0x368a8000,	// yellow
-	0x00000000,	// black
+	B_HOST_TO_LENDIAN_INT32(0x3fcff3fc),	// white
+	B_HOST_TO_LENDIAN_INT32(0x0cc66260),	// blue
+	B_HOST_TO_LENDIAN_INT32(0x1389a000),	// green
+	B_HOST_TO_LENDIAN_INT32(0x01898268),	// cyan
+	B_HOST_TO_LENDIAN_INT32(0x33000000),	// red
+	B_HOST_TO_LENDIAN_INT32(0x1cc441ec),	// magenta
+	B_HOST_TO_LENDIAN_INT32(0x368a8000),	// yellow
+	B_HOST_TO_LENDIAN_INT32(0x00000000),	// black
 };
 
 static struct console_info sConsole;
