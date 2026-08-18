@@ -1,8 +1,0 @@
-SubDir HAIKU_TOP src add-ons kernel drivers graphics wii ;
-
-UsePrivateHeaders graphics [ FDirName graphics vesa ] ;
-UsePrivateKernelHeaders ;
-
-KernelAddon wii_video :
-	wii_video.cpp
-;
