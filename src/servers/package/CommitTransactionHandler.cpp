@@ -884,10 +884,19 @@ CommitTransactionHandler::_AddGlobalWritableFiles(Package* package)
 
 	for (int32 i = 0; const BGlobalWritableFileInfo* file = files.ItemAt(i);
 		i++) {
-		if (file->IsIncluded()) {
-			_AddGlobalWritableFile(package, *file, rootDirectory,
-				extractedFilesDirectory);
+		if (!file->IsIncluded())
+			continue;
+
+		// skip declared writable files the package never shipped (broken package)
+		if (!BEntry(&extractedFilesDirectory, file->Path()).Exists()) {
+			INFORM("Package %s declares global writable file \"%s\", but does "
+				"not contain it -- skipping.\n", package->FileName().String(),
+				file->Path().String());
+			continue;
 		}
+
+		_AddGlobalWritableFile(package, *file, rootDirectory,
+			extractedFilesDirectory);
 	}
 }
 
