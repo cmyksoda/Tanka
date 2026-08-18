@@ -3,14 +3,17 @@ service x-vnd.Haiku-app_server {
 	launch /system/servers/app_server
 }
 
+# Tanka: show a "setting up" panel during the slow part of boot; it quits
+# itself once the Deskbar is up. Kept at top level: the first BApplication is
+# what makes app_server build its Desktop, open /dev/graphics and paint, so no
+# target choice or signature lookup may stand between boot and the first frame.
+job x-vnd.Tanka-BootProgress {
+	env /system/boot/SetupEnvironment
+	launch /system/apps/BootProgress
+}
+
 target desktop {
 	env /system/boot/SetupEnvironment
-
-	# Tanka: show a "setting up" panel during the slow part of boot; it quits
-	# itself once the Deskbar (below) is up.
-	job x-vnd.Tanka-BootProgress {
-		launch /system/apps/BootProgress
-	}
 
 	service x-vnd.Be-TRAK {
 		launch /system/Tracker
