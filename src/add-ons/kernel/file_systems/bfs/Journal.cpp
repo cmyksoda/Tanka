@@ -573,7 +573,7 @@ Journal::ReplayLog()
 
 	INFORM(("Replay log, disk was not correctly unmounted...\n"));
 
-	if (fVolume->SuperBlock().flags != SUPER_BLOCK_DISK_DIRTY) {
+	if (fVolume->SuperBlock().Flags() != SUPER_BLOCK_DISK_DIRTY) {
 		INFORM(("log_start and log_end differ, but disk is marked clean - "
 			"trying to replay log...\n"));
 	}
@@ -880,7 +880,8 @@ Journal::_WriteTransactionToLog()
 
 	// Update the log end pointer in the superblock
 
-	fVolume->SuperBlock().flags = SUPER_BLOCK_DISK_DIRTY;
+	fVolume->SuperBlock().flags = HOST_ENDIAN_TO_BFS_INT32(
+		SUPER_BLOCK_DISK_DIRTY);
 	fVolume->SuperBlock().log_end = HOST_ENDIAN_TO_BFS_INT64(logPosition);
 
 	status = fVolume->WriteSuperBlock();

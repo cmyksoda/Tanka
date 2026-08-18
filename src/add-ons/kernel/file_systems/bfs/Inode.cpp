@@ -748,7 +748,7 @@ Inode::_AddSmallData(Transaction& transaction, NodeGetter& nodeGetter,
 			last = last->Next();
 
 		// try to change the attributes value
-		if (item->data_size > pos + length
+		if (item->DataSize() > pos + length
 			|| force
 			|| ((uint8*)last + pos + length - item->DataSize())
 					<= ((uint8*)node + fVolume->InodeSize())) {
@@ -1059,7 +1059,7 @@ Inode::ReadAttribute(const char* name, int32 type, off_t pos, uint8* buffer,
 		small_data* smallData = FindSmallData(node.Node(), name);
 		if (smallData != NULL) {
 			size_t length = *_length;
-			if (pos >= smallData->data_size) {
+			if (pos >= smallData->DataSize()) {
 				*_length = 0;
 				return B_OK;
 			}

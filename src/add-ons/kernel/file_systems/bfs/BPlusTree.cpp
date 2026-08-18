@@ -1063,6 +1063,13 @@ BPlusTree::_CompareKeys(const void* key1, int keyLength1, const void* key2,
 	    	type = B_DOUBLE_TYPE;
 	    	break;
 	}
+
+	// numeric keys are stored in file system byte order
+	uint8 buffer1[sizeof(int64)];
+	uint8 buffer2[sizeof(int64)];
+	key1 = bfs_convert_index_key(type, (const uint8*)key1, keyLength1, buffer1);
+	key2 = bfs_convert_index_key(type, (const uint8*)key2, keyLength2, buffer2);
+
 	return QueryParser::compareKeys(type, key1, keyLength1, key2, keyLength2);
 }
 
@@ -2090,7 +2097,7 @@ BPlusTree::_RemoveKey(bplustree_node* node, uint16 index)
 	uint8* keys = node->Keys();
 
 	node->all_key_count = HOST_ENDIAN_TO_BFS_INT16(node->NumKeys() - 1);
-	node->all_key_length = HOST_ENDIAN_TO_BFS_INT64(
+	node->all_key_length = HOST_ENDIAN_TO_BFS_INT16(
 		node->AllKeyLength() - length);
 
 	Unaligned<off_t>* newValues = node->Values();
@@ -2164,7 +2171,9 @@ BPlusTree::Remove(Transaction& transaction, const uint8* key, uint16 keyLength,
 					"allowed, inode %" B_PRIdOFF "!\n", fStream->ID()));
 				RETURN_ERROR(B_ERROR);
 			} else {
-				if (node->Values()[nodeAndKey.keyIndex] != value)
+				off_t oldValue = BFS_ENDIAN_TO_HOST_INT64(
+					node->Values()[nodeAndKey.keyIndex]);
+				if (oldValue != value)
 					return B_ENTRY_NOT_FOUND;
 
 				// If we will remove the last key, the iterator will be set
@@ -2982,7 +2991,7 @@ bplustree_node::CountDuplicates(off_t offset, bool isFragment) const
 	if (isFragment) {
 		uint32 fragment = (NUM_FRAGMENT_VALUES + 1) * ((uint64)offset & 0x3ff);
 
-		return ((off_t*)this)[fragment];
+		return BFS_ENDIAN_TO_HOST_INT64(((off_t*)this)[fragment]);
 	}
 	return OverflowLink();
 }
@@ -2997,7 +3006,7 @@ bplustree_node::DuplicateAt(off_t offset, bool isFragment, int8 index) const
 	else
 		start = 2;
 
-	return ((off_t*)this)[start + 1 + index];
+	return BFS_ENDIAN_TO_HOST_INT64(((off_t*)this)[start + 1 + index]);
 }
 
 

@@ -39,12 +39,14 @@ struct Query::QueryPolicy {
 	struct IndexIterator : TreeIterator {
 		off_t offset;
 		bool isSpecialTime;
+		type_code type;
 
 		IndexIterator(BPlusTree* tree)
 			:
 			TreeIterator(tree),
 			offset(0),
-			isSpecialTime(false)
+			isSpecialTime(false),
+			type(B_STRING_TYPE)
 		{
 		}
 	};
@@ -146,6 +148,7 @@ struct Query::QueryPolicy {
 			return NULL;
 
 		iterator->isSpecialTime = index.isSpecialTime;
+		iterator->type = index.Type();
 		return iterator;
 	}
 
@@ -166,6 +169,11 @@ struct Query::QueryPolicy {
 			value = &shiftedTime;
 		}
 
+		// the tree stores numeric keys in file system byte order
+		uint8 keyBuffer[sizeof(int64)];
+		value = bfs_convert_index_key(iterator->type, (const uint8*)value, size,
+			keyBuffer);
+
 		return iterator->Find((const uint8*)value, size);
 	}
 
@@ -178,6 +186,9 @@ struct Query::QueryPolicy {
 			bufferSize, &iterator->offset, &duplicate);
 		if (status != B_OK)
 			return status;
+
+		// the tree stores numeric keys in file system byte order
+		bfs_convert_index_key(iterator->type, indexValue, keyLength);
 
 		if (iterator->isSpecialTime) {
 			// int64 time index; convert value.
@@ -246,8 +257,8 @@ struct Query::QueryPolicy {
 			attributeName);
 		if (smallData != NULL) {
 			buffer = smallData->Data();
-			*type = smallData->type;
-			*size = smallData->data_size;
+			*type = smallData->Type();
+			*size = smallData->DataSize();
 		} else {
 			// needed to unlock the small_data section as fast as possible
 			holder.smallDataLocker.Unlock();
