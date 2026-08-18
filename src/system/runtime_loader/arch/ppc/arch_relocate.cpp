@@ -403,8 +403,27 @@ arch_relocate_image(image_t* rootImage, image_t* image,
 			return status;
 	}
 
+	// The linker puts .rela.plt inside the DT_RELA range while DT_JMPREL also
+	// names it; a second pass would redo every JMP_SLOT and run the trampoline
+	// pool (sized for one pass) dry.
+	bool pltrelInsideRela = false;
+	if (image->pltrel != NULL && image->rela != NULL) {
+		addr_t relaStart = (addr_t)image->rela;
+		addr_t relaEnd = relaStart + image->rela_len;
+		addr_t pltStart = (addr_t)image->pltrel;
+		addr_t pltEnd = pltStart + image->pltrel_len;
+		pltrelInsideRela = pltStart >= relaStart && pltEnd <= relaEnd;
+
+		// A partial overlap would double- or half-process entries; scream.
+		if (!pltrelInsideRela && pltStart < relaEnd && relaStart < pltEnd) {
+			FATAL("%s: .rela.plt partially overlaps the DT_RELA range\n",
+				image->name);
+			return B_BAD_DATA;
+		}
+	}
+
 	// The PLT relocations are RELA too (.rela.plt).
-	if (image->pltrel) {
+	if (image->pltrel && !pltrelInsideRela) {
 		status = relocate_rela(rootImage, image, (Elf32_Rela*)image->pltrel,
 			image->pltrel_len, cache, &pool);
 		if (status != B_OK)
