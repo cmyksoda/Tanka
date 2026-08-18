@@ -278,8 +278,9 @@ PPCWii::InitPostVM(struct kernel_args *kernelArgs)
 status_t
 PPCWii::InitPostThread(struct kernel_args *kernelArgs)
 {
+	// Low priority: a missed frame is invisible, a starved launch_daemon isn't.
 	thread_id thread = spawn_kernel_thread(VideoThread, "wii video conversion",
-		B_DISPLAY_PRIORITY, this);
+		B_LOW_PRIORITY, this);
 	if (thread < 0)
 		return thread;
 
@@ -293,25 +294,25 @@ PPCWii::VideoThread(void* arg)
 	PPCWii* self = (PPCWii*)arg;
 	
 	while (true) {
-		// Wait ~16ms (60 FPS)
-		snooze(16666);
-		
+		// Wait ~33ms (30 FPS)
+		snooze(33333);
+
 		uint8* src = (uint8*)self->fFakeFrameBuffer;
 		uint8* dst = (uint8*)self->fRealFrameBuffer;
-		
+
 		int pixels = self->fFrameBufferWidth * self->fFrameBufferHeight;
-		
+
 		// Convert RGB32 to YUYV (YUV422)
-		// Haiku B_RGB32 is usually B G R A in memory (little endian) or A R G B (big endian)
-		// On PowerPC, B_RGB32 is stored as A R G B (alpha byte at offset 0).
+		// app_server's B_RGB32 is B,G,R,X byte order in memory on every arch
+		// (Painter uses agg::order_bgra; see DrawingModeCopy.h ASSIGN_COPY).
 		for (int i = 0; i < pixels; i += 2) {
-			uint8 r0 = src[i*4 + 1];
-			uint8 g0 = src[i*4 + 2];
-			uint8 b0 = src[i*4 + 3];
-			
-			uint8 r1 = src[(i+1)*4 + 1];
-			uint8 g1 = src[(i+1)*4 + 2];
-			uint8 b1 = src[(i+1)*4 + 3];
+			uint8 b0 = src[i*4 + 0];
+			uint8 g0 = src[i*4 + 1];
+			uint8 r0 = src[i*4 + 2];
+
+			uint8 b1 = src[(i+1)*4 + 0];
+			uint8 g1 = src[(i+1)*4 + 1];
+			uint8 r1 = src[(i+1)*4 + 2];
 			
 			// Approximation formulas:
 			// Y = (77*R + 150*G + 29*B) >> 8
