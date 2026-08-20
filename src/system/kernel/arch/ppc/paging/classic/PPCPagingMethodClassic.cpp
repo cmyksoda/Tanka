@@ -221,6 +221,10 @@ PPCPagingMethodClassic::InitPostArea(kernel_args* args)
 status_t
 PPCPagingMethodClassic::CreateTranslationMap(bool kernel, VMTranslationMap** _map)
 {
+	// s14 page table auditor, registers itself once the kernel is up (PPCPageTableAudit.cpp)
+	extern void ppc_pte_audit_init();
+	ppc_pte_audit_init();
+
 	PPCVMTranslationMapClassic* map = new(std::nothrow) PPCVMTranslationMapClassic;
 	if (map == NULL)
 		return B_NO_MEMORY;
