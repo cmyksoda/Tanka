@@ -164,11 +164,47 @@ fill_page_table_entry(page_table_entry *entry, uint32 virtualSegmentID,
 }
 
 
+//! The kernel assumes at most one page table entry per virtual address: its
+//! lookup returns the first match and every unmap path clears exactly that one,
+//! so a second entry for the same address outlives the unmap, sits in what the
+//! kernel believes is free address space, and is later charged to whatever area
+//! lands there. The MEM1/MEM2 windows below deliberately re-map everything
+//! arch_mmu_allocate() already mapped, so drop any existing entry first. The
+//! table is not live yet (translation still runs off libogc's BATs), so no TLB
+//! invalidation is needed.
+static void
+remove_page_table_entries(addr_t virtualAddress)
+{
+	uint32 virtualSegmentID = virtualAddress >> 28;
+	uint32 hash = page_table_entry::PrimaryHash(virtualSegmentID,
+		(uint32)virtualAddress);
+	uint32 abbrPageIndex = (virtualAddress >> 22) & 0x3f;
+
+	for (int32 pass = 0; pass < 2; pass++) {
+		page_table_entry_group *group = &sPageTable[(pass == 0
+			? hash : page_table_entry::SecondaryHash(hash)) & sPageTableHashMask];
+
+		for (int32 i = 0; i < 8; i++) {
+			page_table_entry *entry = &group->entry[i];
+
+			if (entry->valid
+				&& entry->virtual_segment_id == virtualSegmentID
+				&& entry->secondary_hash == (uint32)pass
+				&& entry->abbr_page_index == abbrPageIndex) {
+				entry->valid = false;
+			}
+		}
+	}
+}
+
+
 //! The segment registers get VSID == segment number, so the VSID is implied.
 static void
 map_page(addr_t virtualAddress, addr_t physicalAddress, uint8 mode)
 {
 	uint32 virtualSegmentID = virtualAddress >> 28;
+
+	remove_page_table_entries(virtualAddress);
 
 	uint32 hash = page_table_entry::PrimaryHash(virtualSegmentID,
 		(uint32)virtualAddress);
