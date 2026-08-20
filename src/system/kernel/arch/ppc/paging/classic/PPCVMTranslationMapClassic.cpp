@@ -74,6 +74,7 @@
 
 #include "paging/classic/PPCVMTranslationMapClassic.h"
 
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -171,6 +172,153 @@ vsid_for_address(uint32 vsidBase, addr_t virtualAddress)
 	if (IS_KERNEL_ADDRESS(virtualAddress))
 		return get_sr((void*)virtualAddress) & 0xffffff;
 	return VADDR_TO_VSID(vsidBase, virtualAddress);
+}
+
+
+// #pragma mark - wired-area page table entry forensics
+
+
+// Why a wired area's page table entry could not be trusted.
+enum {
+	PPC_PTE_TRUSTED = 0,
+	PPC_PTE_NULL_PAGE,
+	PPC_PTE_NULL_CACHE,
+	PPC_PTE_FOREIGN_CACHE,
+	PPC_PTE_WIRED_ZERO
+};
+
+static const char* const kPPCPteTrustNames[] = {
+	"OK", "NULLPAGE", "NULLCACHE", "FOREIGN", "WIRED0"
+};
+
+// Keep the gecko console usable: dump in full only this many times per boot.
+#define PPC_PTE_FORENSIC_LIMIT 16
+static int32 sPPCPteForensicCount = 0;
+
+
+/*!	Returns the depth of \a pageCache in \a area's cache chain, or -1.
+
+	B_FULL_LOCK/B_CONTIGUOUS/B_ALREADY_WIRED insert their pages into the area's
+	own cache, so those wire pages at depth 0; a B_FULL_LOCK clone made by
+	vm_copy_area() and every B_LAZY_LOCK soft fault can instead wire a page
+	owned by a source cache, so the whole chain counts as "ours" and the depth
+	is what tells the two apart in the dump.
+*/
+static int
+ppc_area_cache_depth(VMArea* area, VMCache* pageCache)
+{
+	VMCache* cache = area->cache;
+	for (int depth = 0; cache != NULL && depth < 16;
+			depth++, cache = cache->source) {
+		if (cache == pageCache)
+			return depth;
+	}
+
+	return -1;
+}
+
+
+/*!	Vets the page a page table entry names before a wired area accounts it.
+
+	Wired areas carry no vm_page_mapping objects, so UnmapPage()/UnmapPages()
+	have nothing to check a hardware entry against and used to hand every page
+	they found straight to PageUnmapped() -> DecrementWiredCount(). If the entry
+	is stale, or the page was already released, that silently corrupts a
+	stranger's wired count - the first wrong step behind the undertaker panic.
+	Returns true when the page really belongs here; otherwise dumps one dense
+	line and lets the caller drop the entry without touching the page at all.
+
+	One-shot diagnostic: page/cache fields are read without their own locks (we
+	only hold the translation map lock), which is acceptable because nothing
+	acts on the values beyond printing them.
+*/
+static bool
+ppc_check_wired_pte(VMArea* area, addr_t address, page_table_entry* entry,
+	page_num_t pageNumber)
+{
+	vm_page* page = vm_lookup_page(pageNumber);
+	VMCache* pageCache = page != NULL ? page->Cache() : NULL;
+	int depth = pageCache != NULL ? ppc_area_cache_depth(area, pageCache) : -1;
+
+	int reason = PPC_PTE_TRUSTED;
+	if (page == NULL)
+		reason = PPC_PTE_NULL_PAGE;
+	else if (pageCache == NULL)
+		reason = PPC_PTE_NULL_CACHE;
+	else if (depth < 0)
+		reason = PPC_PTE_FOREIGN_CACHE;
+	else if (page->WiredCount() == 0)
+		reason = PPC_PTE_WIRED_ZERO;
+
+	if (reason == PPC_PTE_TRUSTED)
+		return true;
+
+	int32 count = atomic_add(&sPPCPteForensicCount, 1);
+	if (count >= PPC_PTE_FORENSIC_LIMIT) {
+		if (count == PPC_PTE_FORENSIC_LIMIT) {
+			dprintf("PPC-PTE-FORENSIC: limit reached, further events are "
+				"counted silently\n");
+		}
+		return false;
+	}
+
+	// The cache's first area names who really owns the page (e.g. a stack).
+	const char* cacheOwner = "-";
+	unsigned int cacheType = 0;
+	if (pageCache != NULL) {
+		cacheType = (unsigned int)pageCache->type;
+		VMArea* ownerArea = pageCache->areas.Head();
+		if (ownerArea != NULL)
+			cacheOwner = ownerArea->name;
+	}
+
+	// List the areas the page still thinks it is mapped into (B_NO_LOCK ones).
+	char mappedAreas[96];
+	size_t pos = 0;
+	int mappings = 0;
+	if (page != NULL) {
+		vm_page_mappings::Iterator it = page->mappings.GetIterator();
+		while (vm_page_mapping* mapping = it.Next()) {
+			mappings++;
+			if (mappings > 4 || pos + 1 >= sizeof(mappedAreas))
+				continue;
+			int written = snprintf(mappedAreas + pos, sizeof(mappedAreas) - pos,
+				"%s%" B_PRId32 ":%s", mappings > 1 ? "," : "",
+				mapping->area->id, mapping->area->name);
+			if (written < 0 || (size_t)written >= sizeof(mappedAreas) - pos) {
+				pos = sizeof(mappedAreas) - 1;
+				continue;
+			}
+			pos += written;
+		}
+	}
+	mappedAreas[pos] = '\0';
+
+	uint32* raw = (uint32*)entry;
+	VMAddressSpace* space = area->address_space;
+
+	dprintf("PPC-PTE-FORENSIC: %s n=%" B_PRId32 " va=%#" B_PRIxADDR " area=%"
+		B_PRId32 " \"%s\" base=%#" B_PRIxADDR " size=%#" B_PRIxSIZE
+		" wiring=%u %s team=%" B_PRId32 " pte=%08" B_PRIx32 ":%08" B_PRIx32
+		" vsid=%#x H=%u API=%#x rpn=%#x R=%u C=%u PP=%u pfn=%#" B_PRIxPHYSADDR
+		" page=%p state=%u wired=%u busy=%u cache=%p ctype=%u cdepth=%d"
+		" cowner=\"%s\" nmaps=%d maps=[%s]\n",
+		kPPCPteTrustNames[reason], count + 1, address, area->id, area->name,
+		area->Base(), area->Size(), (unsigned int)area->wiring,
+		space == VMAddressSpace::Kernel() ? "kernel" : "user",
+		space != NULL ? space->ID() : (team_id)-1, raw[0], raw[1],
+		(unsigned int)entry->virtual_segment_id,
+		(unsigned int)entry->secondary_hash,
+		(unsigned int)entry->abbr_page_index,
+		(unsigned int)entry->physical_page_number,
+		(unsigned int)entry->referenced, (unsigned int)entry->changed,
+		(unsigned int)entry->page_protection, pageNumber, page,
+		page != NULL ? (unsigned int)page->State() : 0,
+		page != NULL ? (unsigned int)page->WiredCount() : 0,
+		page != NULL ? (unsigned int)page->busy : 0, pageCache, cacheType,
+		depth, cacheOwner, mappings, mappedAreas);
+
+	return false;
 }
 
 
@@ -927,7 +1075,7 @@ PPCVMTranslationMapClassic::UnmapPage(VMArea* area, addr_t address,
 	// software mapping in this area was already removed (see UnmapPages() and
 	// Map()). Only account it to PageUnmapped() when it is genuine, or its
 	// "mapping != NULL" assert fires. A wired area has no mapping objects
-	// (PageUnmapped() uses DecrementWiredCount()), so it always counts.
+	// (PageUnmapped() uses DecrementWiredCount()), so vet its page separately.
 	bool genuine = area->wiring != B_NO_LOCK;
 	if (!genuine) {
 		vm_page* ptePage = vm_lookup_page(pageNumber);
@@ -937,6 +1085,9 @@ PPCVMTranslationMapClassic::UnmapPage(VMArea* area, addr_t address,
 				if (m->area == area) { genuine = true; break; }
 			}
 		}
+	} else if (!ppc_check_wired_pte(area, address, entry, pageNumber)) {
+		// Wired area, but the page isn't ours: drop the entry, account nothing.
+		genuine = false;
 	}
 
 	RemovePageTableEntry(address);
@@ -1107,8 +1258,8 @@ PPCVMTranslationMapClassic::UnmapPages(VMArea* area, addr_t base, size_t size,
 		// PageUnmapped() would trip its "mapping != NULL" assert. Account the
 		// page only when it is genuinely mapped here:
 		//  - A wired area carries no vm_page_mapping objects (it uses
-		//    wired_count); PageUnmapped() handles it via DecrementWiredCount()
-		//    and must always run.
+		//    wired_count); PageUnmapped() handles it via DecrementWiredCount(),
+		//    so ppc_check_wired_pte() vets the page instead (see there).
 		//  - Otherwise the page must have a mapping for this area.
 		// A stale entry (verified over many boots to always name a page with
 		// an empty mapping list) is simply cleared below; nothing is leaked,
@@ -1123,6 +1274,10 @@ PPCVMTranslationMapClassic::UnmapPages(VMArea* area, addr_t base, size_t size,
 					if (m->area == area) { genuine = true; break; }
 				}
 			}
+		} else if (!ppc_check_wired_pte(area, address, entry, pageNumber)) {
+			// Wired area, but the page isn't ours: drop the entry, account
+			// nothing - never take a wired count we did not put there.
+			genuine = false;
 		}
 
 		RemovePageTableEntry(address);

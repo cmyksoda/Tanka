@@ -403,13 +403,24 @@ vm_page::DecrementWiredCount()
 		// Known ppc teardown over-decrement bug: skip instead of panicking
 		// (leak the page, as the VMCache::Delete workaround already does).
 		static int32 sPPCWiredUnderflow = 0;
-		if (atomic_add(&sPPCWiredUnderflow, 1) == 0) {
+		int32 count = atomic_add(&sPPCWiredUnderflow, 1);
+		(void)count;
 #ifdef _KERNEL_MODE
-			// userlandfs builds this header against POSIX dprintf().
-			dprintf("vm_page::DecrementWiredCount: ppc wired-count underflow; "
-				"skipping to avoid a kernel panic. Counted silently after this.\n");
-#endif
+		// userlandfs builds this header against POSIX dprintf().
+		if (count < 8) {
+			// ppc's arch_debug_get_stack_trace() is a stub, so the inlined
+			// caller's return address is the only cheap caller hint we get.
+			dprintf("PPC-PTE-FORENSIC: WIRED-UNDERFLOW n=%" B_PRId32 " page=%p"
+				" pfn=%#" B_PRIxPHYSADDR " state=%u busy=%u cache=%p ret=%p"
+				" (ppc wired-count underflow; skipping to avoid a kernel"
+				" panic)\n", count + 1, this, physical_page_number,
+				(unsigned int)State(), (unsigned int)busy, Cache(),
+				__builtin_return_address(0));
+		} else if (count == 8) {
+			dprintf("PPC-PTE-FORENSIC: WIRED-UNDERFLOW limit reached, further"
+				" occurrences counted silently\n");
 		}
+#endif
 		return;
 	}
 #else

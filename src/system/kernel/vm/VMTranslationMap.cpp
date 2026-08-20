@@ -261,7 +261,26 @@ VMTranslationMap::PageUnmapped(VMArea* area, page_num_t pageNumber,
 		atomic_add(&gMappedPagesCount, -1);
 
 		if (updatePageQueue) {
+#ifdef __POWERPC__
+			// ppc teardown can still reach here with an already-released page.
+			if (page->Cache() == NULL) {
+				static int32 sPPCNullCacheCount = 0;
+				int32 count = atomic_add(&sPPCNullCacheCount, 1);
+				if (count < 16) {
+					dprintf("PPC-PTE-FORENSIC: NULLCACHE-UNMAPPED n=%" B_PRId32
+						" area=%" B_PRId32 " \"%s\" wiring=%u page=%p pfn=%#"
+						B_PRIxPHYSADDR " state=%u wired=%u busy=%u acc=%u"
+						" mod=%u\n", count + 1, area->id, area->name,
+						(unsigned int)area->wiring, page, pageNumber,
+						(unsigned int)page->State(),
+						(unsigned int)page->WiredCount(),
+						(unsigned int)page->busy, (unsigned int)accessed,
+						(unsigned int)modified);
+				}
+			} else if (page->Cache()->temporary)
+#else
 			if (page->Cache()->temporary)
+#endif
 				vm_page_set_state(page, PAGE_STATE_INACTIVE);
 			else if (page->modified)
 				vm_page_set_state(page, PAGE_STATE_MODIFIED);
