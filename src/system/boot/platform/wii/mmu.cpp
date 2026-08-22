@@ -61,6 +61,10 @@ struct memory_pool {
 
 static memory_pool sMem1Pool;
 static memory_pool sMem2Pool;
+// Initial pool bases: the handoff windows must stop where the pools began,
+// not where they ended up, or they re-map every pool allocation.
+static addr_t sMem1PoolBase;
+static addr_t sMem2PoolBase;
 
 static wii_address_mapping sMappings[128];
 static uint32 sMappingCount;
@@ -293,6 +297,8 @@ boot_arch_mmu_init(void)
 	sMem1Pool.end = ROUNDDOWN(wii_loader_to_physical(arena1Hi), B_PAGE_SIZE);
 	sMem2Pool.next = wii_loader_to_physical(mem2PoolStart);
 	sMem2Pool.end = ROUNDDOWN(wii_loader_to_physical(arena2Hi), B_PAGE_SIZE);
+	sMem1PoolBase = sMem1Pool.next;
+	sMem2PoolBase = sMem2Pool.next;
 
 	// everything outside the pools is libogc's, the loader's or IOS'
 	insert_physical_allocated_range(MEM1_BASE, sMem1Pool.next - MEM1_BASE);
@@ -415,14 +421,17 @@ wii_mmu_prepare_handoff(kernel_args** _kernelArgs, uint32* _sdr1)
 	// exceptions long before it installs its own vectors, and the vectors at
 	// physical zero branch straight back into libogc's handlers. This has to
 	// go in before the alias below, so address lookups find it first.
+	// Window the pre-pool libogc/loader memory only: every pool allocation is
+	// already in sMappings (arch_mmu_allocate and the page table both
+	// add_mapping), so windowing past the pool base would only re-map them.
 	if (add_mapping(wii_physical_to_loader(MEM1_BASE), MEM1_BASE,
-			sMem1Pool.next - MEM1_BASE, B_READ_AREA | B_WRITE_AREA) != B_OK
+			sMem1PoolBase - MEM1_BASE, B_READ_AREA | B_WRITE_AREA) != B_OK
 		|| insert_virtual_allocated_range(wii_physical_to_loader(MEM1_BASE),
-			sMem1Pool.next - MEM1_BASE) != B_OK
+			sMem1PoolBase - MEM1_BASE) != B_OK
 		|| add_mapping(wii_physical_to_loader(MEM2_BASE), MEM2_BASE,
-			sMem2Pool.next - MEM2_BASE, B_READ_AREA | B_WRITE_AREA) != B_OK
+			sMem2PoolBase - MEM2_BASE, B_READ_AREA | B_WRITE_AREA) != B_OK
 		|| insert_virtual_allocated_range(wii_physical_to_loader(MEM2_BASE),
-			sMem2Pool.next - MEM2_BASE) != B_OK) {
+			sMem2PoolBase - MEM2_BASE) != B_OK) {
 		return B_NO_MEMORY;
 	}
 
