@@ -122,18 +122,25 @@ TBarMenuBar::TBarMenuBar(BRect frame, const char* name, TBarView* barView)
 
 	BBitmap* icon = NULL;
 	size_t dataSize;
-#ifdef HAIKU_DISTRO_COMPATIBILITY_COMPATIBLE
-	// Tanka: the leaf is a PNG (paw) resource; decode it to a bitmap.
-	const void* data = AppResSet()->FindResource(B_PNG_FORMAT,
-		R_LeafLogoBitmap, &dataSize);
-	if (data != NULL) {
+	// Tanka: the branded logo wins over the stock vector leaf. The archived
+	// bitmap decodes without translators, which Deskbar starts too early for.
+	const BBitmap* archived = AppResSet()->FindBitmap(B_MESSAGE_TYPE,
+		R_LeafLogoBitmap);
+	if (archived != NULL) {
+		icon = new BBitmap(archived);
+		if (icon->InitCheck() != B_OK) {
+			delete icon;
+			icon = NULL;
+		}
+	}
+	const void* data;
+	if (icon == NULL && (data = AppResSet()->FindResource(B_PNG_FORMAT,
+			R_LeafLogoBitmap, &dataSize)) != NULL) {
 		BMemoryIO stream(data, dataSize);
 		icon = BTranslationUtils::GetBitmap(&stream);
 	}
-#else
-	const void* data = AppResSet()->FindResource(B_VECTOR_ICON_TYPE,
-		R_LeafLogoBitmap, &dataSize);
-	if (data != NULL) {
+	if (icon == NULL && (data = AppResSet()->FindResource(B_VECTOR_ICON_TYPE,
+			R_LeafLogoBitmap, &dataSize)) != NULL) {
 		// seems valid, scale bitmap according to be_bold_font size
 		float width = std::max(63.f, ceilf(63 * be_bold_font->Size() / 12.f));
 		float height = std::max(22.f, ceilf(22 * be_bold_font->Size() / 12.f));
@@ -145,7 +152,6 @@ TBarMenuBar::TBarMenuBar(BRect frame, const char* name, TBarView* barView)
 			icon = NULL;
 		}
 	}
-#endif
 
 	fDeskbarMenuItem = new TBarMenuTitle(0.0f, 0.0f, icon, beMenu, fBarView);
 	AddItem(fDeskbarMenuItem);
