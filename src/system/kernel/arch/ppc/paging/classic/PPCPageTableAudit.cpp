@@ -550,7 +550,11 @@ audit_sweep(bool kdlMode, uint32 maxLines)
 		(unsigned long)state.repeats, (unsigned long)state.dropped,
 		(unsigned long)state.loaderWindow, (long long)duration);
 
-	if (state.loaderWindow != sLastLoaderWindow) {
+	// Small drifts are routine device mappings; only a jump is news.
+	uint32 delta = state.loaderWindow > sLastLoaderWindow
+		? state.loaderWindow - sLastLoaderWindow
+		: sLastLoaderWindow - state.loaderWindow;
+	if (sLastLoaderWindow == 0xffffffff || delta > 256) {
 		sLastLoaderWindow = state.loaderWindow;
 		AUDIT_PRINT(state, AUDIT_PREFIX "loader-window entries changed: %lu "
 			"(first ea %#lx)\n", (unsigned long)state.loaderWindow,
