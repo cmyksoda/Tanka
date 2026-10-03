@@ -77,6 +77,9 @@ platform_start_kernel(void)
 	dprintf("kernel entry at %p\n", (void*)kernelEntry);
 	dprintf("kernel stack top: %p\n", (void*)stackTop);
 
+	// Before the hand-off maps memory for the kernel, so the copy is mapped too.
+	debug_cleanup();
+
 	// the kernel's first stack frame, written while the BATs still reach it
 	memset((void*)(stackTop - 16), 0, 16);
 

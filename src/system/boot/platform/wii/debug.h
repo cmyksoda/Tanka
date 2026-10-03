@@ -11,6 +11,7 @@
 
 void debug_init(void);
 void debug_write(const char* buffer, size_t length);
+void debug_cleanup(void);
 
 
 #endif	// WII_DEBUG_H
