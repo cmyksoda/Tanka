@@ -14,3 +14,7 @@ This project is heavily AI-assisted and in the very early stages of development.
 ---
 
 *Haiku® and the HAIKU logo® are registered trademarks of [Haiku, Inc.](http://www.haiku-inc.org) and are developed by the [Haiku Project](http://www.haiku-os.org).*
+
+---
+
+*This project was made with AI assistance. For more information, see [my AI usage statement](https://github.com/cmyksoda/cmyksoda/blob/main/AI_USAGE.md).*
