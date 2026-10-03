@@ -69,18 +69,18 @@ cat << 'EOF' > "$OUTPUT_DIR/README.txt"
 Tanka for the Nintendo Wii
 ==========================
 
-The loader opens the SD card as a raw disk, walks its MBR partition table and
-boots the first Tanka (BFS) partition it finds. It does not read tanka.img as a
-file, so the card needs two partitions:
+Copy the apps/ and tanka/ folders onto the root of a FAT32 SD card (an 8 GB
+or larger SDHC card; tanka.img is just under 4 GB), then launch "Tanka" from
+the Homebrew Channel:
 
-  1. FAT32, holding the Homebrew Channel app:
-       apps/Tanka/boot.dol
-       apps/Tanka/meta.xml
-  2. Anything at least as large as tanka.img, written with the image itself:
-       dd if=tanka/tanka.img of=/dev/<second partition> bs=1M status=progress
+  apps/Tanka/boot.dol
+  apps/Tanka/meta.xml
+  tanka/tanka.img
 
-Copy the apps/ directory onto partition 1, then launch "Tanka" from the
-Homebrew Channel.
+The loader finds tanka/tanka.img on the card and boots the system inside it;
+nothing needs partitioning or writing raw. The file may sit on the card in up
+to 64 pieces; if the loader says it is split into more, copy it to a freshly
+formatted card.
 
 tanka/swap.img is a pre-allocated swap file for later use; the Wii only has
 88 MB of RAM. It is not read by the loader.
