@@ -27,6 +27,7 @@ local platform_src =
 ;
 
 local kernel_src =
+	wii_sd_image.cpp
 ;
 
 # the page table hash the loader and the kernel have to agree on

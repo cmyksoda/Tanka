@@ -12,12 +12,15 @@
 #include <util/AutoLock.h>
 
 #include <platform/wii/wii.h>
+#include <platform/wii/wii_sd_image.h>
 #include <platform/wii/wii_sdio.h>
 
 
-// The raw SD card, driven through IOS the same way the boot loader does.
+// The raw SD card, driven through IOS the same way the boot loader does, and
+// the system image file on it as a disk of its own.
 
 #define DEVICE_NAME				"disk/wii_sd/0/raw"
+#define IMAGE_DEVICE_NAME		"disk/wii_sd/image/raw"
 
 // One transfer is staged whole by the IPC layer, so stay inside its buffer.
 #define MAX_TRANSFER_SECTORS	128
@@ -40,6 +43,9 @@ static uint64 sCapacity = 0;
 static area_id sDMAArea = -1;
 static uint8 *sDMABuffer = NULL;
 static uint32 sDMAPhysical = 0;
+
+static wii_sd_image sImage;
+static bool sHasImage = false;
 
 static wii_sdio_request sRequest;
 static wii_sdio_response sResponse;
@@ -390,6 +396,50 @@ sdio_transfer(uint32 sector, uint32 count, bool write)
 }
 
 
+static status_t
+read_card_sectors(void *cookie, uint32 sector, uint32 count, void *buffer)
+{
+	MutexLocker locker(sLock);
+
+	uint8 *out = (uint8 *)buffer;
+	while (count > 0) {
+		uint32 chunk = count > MAX_TRANSFER_SECTORS
+			? MAX_TRANSFER_SECTORS : count;
+		status_t status = sdio_transfer(sector, chunk, false);
+		if (status != B_OK)
+			return status;
+
+		memcpy(out, sDMABuffer, chunk * kSectorSize);
+		out += chunk * kSectorSize;
+		sector += chunk;
+		count -= chunk;
+	}
+
+	return B_OK;
+}
+
+
+// A NULL cookie is the whole card; otherwise it is the image's run map.
+static uint64
+device_size(void *cookie)
+{
+	if (cookie == NULL)
+		return sCapacity;
+
+	return (uint64)((wii_sd_image *)cookie)->sectors * kSectorSize;
+}
+
+
+static uint32
+card_sector(void *cookie, uint32 sector, uint32 *_count)
+{
+	if (cookie == NULL)
+		return sector;
+
+	return wii_sd_image_map((wii_sd_image *)cookie, sector, _count);
+}
+
+
 //	#pragma mark - device hooks
 
 
@@ -399,7 +449,7 @@ wii_sd_open(const char *name, uint32 flags, void **cookie)
 	if (sFD < 0)
 		return B_NO_INIT;
 
-	*cookie = NULL;
+	*cookie = strcmp(name, IMAGE_DEVICE_NAME) == 0 ? &sImage : NULL;
 	return B_OK;
 }
 
@@ -434,7 +484,7 @@ wii_sd_control(void *cookie, uint32 op, void *buffer, size_t length)
 			memset(&geometry, 0, sizeof(geometry));
 			geometry.bytes_per_sector = kSectorSize;
 			geometry.sectors_per_track = 1;
-			geometry.cylinder_count = (uint32)(sCapacity / kSectorSize);
+			geometry.cylinder_count = (uint32)(device_size(cookie) / kSectorSize);
 			geometry.head_count = 1;
 			geometry.device_type = B_DISK;
 			geometry.removable = true;
@@ -450,7 +500,7 @@ wii_sd_control(void *cookie, uint32 op, void *buffer, size_t length)
 			if (buffer == NULL)
 				return B_BAD_VALUE;
 
-			size_t size = (size_t)sCapacity;
+			size_t size = (size_t)device_size(cookie);
 			return user_memcpy(buffer, &size, sizeof(size));
 		}
 
@@ -481,10 +531,11 @@ wii_sd_read(void *cookie, off_t pos, void *buffer, size_t *_length)
 		return B_NO_INIT;
 	if (pos < 0 || buffer == NULL)
 		return B_BAD_VALUE;
-	if ((uint64)pos >= sCapacity)
+	uint64 size = device_size(cookie);
+	if ((uint64)pos >= size)
 		return B_OK;
-	if ((uint64)pos + length > sCapacity)
-		length = (size_t)(sCapacity - pos);
+	if ((uint64)pos + length > size)
+		length = (size_t)(size - pos);
 
 	MutexLocker locker(sLock);
 
@@ -501,11 +552,18 @@ wii_sd_read(void *cookie, off_t pos, void *buffer, size_t *_length)
 			count = (uint32)(remaining / kSectorSize);
 			if (count > MAX_TRANSFER_SECTORS)
 				count = MAX_TRANSFER_SECTORS;
+		}
+
+		uint32 cardSector = card_sector(cookie, sector, &count);
+		if (count == 0)
+			return B_IO_ERROR;
+
+		if (offset == 0 && remaining >= kSectorSize)
 			chunk = count * kSectorSize;
-		} else if (chunk > remaining)
+		else if (chunk > remaining)
 			chunk = remaining;
 
-		status_t status = sdio_transfer(sector, count, false);
+		status_t status = sdio_transfer(cardSector, count, false);
 		if (status != B_OK)
 			return status;
 
@@ -533,10 +591,11 @@ wii_sd_write(void *cookie, off_t pos, const void *buffer, size_t *_length)
 		return B_NO_INIT;
 	if (pos < 0 || buffer == NULL)
 		return B_BAD_VALUE;
-	if ((uint64)pos >= sCapacity)
+	uint64 size = device_size(cookie);
+	if ((uint64)pos >= size)
 		return B_OK;
-	if ((uint64)pos + length > sCapacity)
-		length = (size_t)(sCapacity - pos);
+	if ((uint64)pos + length > size)
+		length = (size_t)(size - pos);
 
 	MutexLocker locker(sLock);
 
@@ -554,15 +613,22 @@ wii_sd_write(void *cookie, off_t pos, const void *buffer, size_t *_length)
 			count = (uint32)(remaining / kSectorSize);
 			if (count > MAX_TRANSFER_SECTORS)
 				count = MAX_TRANSFER_SECTORS;
-			chunk = count * kSectorSize;
 			partial = false;
-		} else if (chunk > remaining)
+		}
+
+		uint32 cardSector = card_sector(cookie, sector, &count);
+		if (count == 0)
+			return B_IO_ERROR;
+
+		if (!partial)
+			chunk = count * kSectorSize;
+		else if (chunk > remaining)
 			chunk = remaining;
 
 		// A partial sector keeps whatever surrounds the bytes we are writing.
 		status_t status;
 		if (partial) {
-			status = sdio_transfer(sector, 1, false);
+			status = sdio_transfer(cardSector, 1, false);
 			if (status != B_OK)
 				return status;
 		}
@@ -571,7 +637,7 @@ wii_sd_write(void *cookie, off_t pos, const void *buffer, size_t *_length)
 		if (status != B_OK)
 			return status;
 
-		status = sdio_transfer(sector, count, true);
+		status = sdio_transfer(cardSector, count, true);
 		if (status != B_OK)
 			return status;
 
@@ -600,8 +666,12 @@ publish_devices(void)
 {
 	static const char *devices[] = {
 		DEVICE_NAME,
+		NULL,
 		NULL
 	};
+
+	if (sHasImage)
+		devices[1] = IMAGE_DEVICE_NAME;
 
 	return devices;
 }
@@ -619,7 +689,8 @@ find_device(const char *name)
 		&wii_sd_write,
 	};
 
-	if (strcmp(name, DEVICE_NAME) == 0)
+	if (strcmp(name, DEVICE_NAME) == 0
+		|| (sHasImage && strcmp(name, IMAGE_DEVICE_NAME) == 0))
 		return &hooks;
 
 	return NULL;
@@ -665,6 +736,17 @@ init_driver(void)
 
 	dprintf("wii_sd: %s card, %" B_PRIu64 " bytes (%" B_PRIu64 " sectors)\n",
 		sSDHC ? "SDHC" : "SD", sCapacity, sCapacity / kSectorSize);
+
+	status = wii_sd_image_find(read_card_sectors, NULL, &sImage);
+	if (status == B_OK) {
+		sHasImage = true;
+		dprintf("wii_sd: " WII_SD_IMAGE_PATH ", %" B_PRIu64 " bytes in %"
+			B_PRIu32 " piece%s\n", device_size(&sImage), sImage.run_count,
+			sImage.run_count == 1 ? "" : "s");
+	} else if (status != B_ENTRY_NOT_FOUND) {
+		dprintf("wii_sd: cannot use " WII_SD_IMAGE_PATH ": %s\n",
+			strerror(status));
+	}
 
 	return B_OK;
 }

@@ -13,13 +13,8 @@
 #include <gccore.h>
 #include <ogc/ipc.h>
 
+#include <platform/wii/wii_sd_image.h>
 #include <platform/wii/wii_sdio.h>
-
-// A virtual block device that exposes the tanka.img file
-// residing on the physical Wii SD card.
-// For now, we just expose the RAW SD card! The user will have to
-// write the anyboot image directly to the SD card, bypassing FAT32!
-// Later, we can add a FAT32 parser to find tanka.img.
 
 // This drives /dev/sdio/slot0 itself instead of using libogc's DISC_INTERFACE,
 // which cannot report the capacity the kernel matches the boot device against.
@@ -44,6 +39,21 @@ public:
 private:
 	bool fInitialized;
 	off_t fSize;
+};
+
+
+//! tanka/tanka.img on the card's FAT32 file system, read through its clusters.
+class WiiSDImageDevice : public Node {
+public:
+	WiiSDImageDevice(Node *card, const wii_sd_image &image);
+
+	virtual ssize_t ReadAt(void *cookie, off_t pos, void *buffer, size_t bufferSize);
+	virtual ssize_t WriteAt(void *cookie, off_t pos, const void *buffer, size_t bufferSize);
+	virtual off_t Size() const;
+
+private:
+	Node *fCard;
+	wii_sd_image fImage;
 };
 
 
@@ -512,6 +522,84 @@ WiiSDBootDevice::Size() const
 //	#pragma mark -
 
 
+WiiSDImageDevice::WiiSDImageDevice(Node *card, const wii_sd_image &image)
+	:
+	fCard(card),
+	fImage(image)
+{
+}
+
+
+ssize_t
+WiiSDImageDevice::ReadAt(void *cookie, off_t pos, void *buffer, size_t bufferSize)
+{
+	if (pos < 0)
+		return B_BAD_VALUE;
+	if (pos >= Size())
+		return 0;
+	if ((off_t)bufferSize > Size() - pos)
+		bufferSize = Size() - pos;
+
+	uint8 *out = (uint8 *)buffer;
+	size_t remaining = bufferSize;
+
+	while (remaining > 0) {
+		uint32 sector = pos / kSectorSize;
+		size_t offset = pos % kSectorSize;
+		uint32 count = (offset + remaining + kSectorSize - 1) / kSectorSize;
+		uint32 cardSector = wii_sd_image_map(&fImage, sector, &count);
+		if (count == 0)
+			return B_IO_ERROR;
+
+		size_t chunk = count * kSectorSize - offset;
+		if (chunk > remaining)
+			chunk = remaining;
+
+		ssize_t bytesRead = fCard->ReadAt(NULL,
+			(off_t)cardSector * kSectorSize + offset, out, chunk);
+		if (bytesRead != (ssize_t)chunk)
+			return bytesRead < 0 ? bytesRead : B_IO_ERROR;
+
+		out += chunk;
+		pos += chunk;
+		remaining -= chunk;
+	}
+
+	return bufferSize;
+}
+
+
+ssize_t
+WiiSDImageDevice::WriteAt(void *cookie, off_t pos, const void *buffer,
+	size_t bufferSize)
+{
+	return B_NOT_SUPPORTED;
+}
+
+
+off_t
+WiiSDImageDevice::Size() const
+{
+	return (off_t)fImage.sectors * kSectorSize;
+}
+
+
+static status_t
+read_card_sectors(void *cookie, uint32 sector, uint32 count, void *buffer)
+{
+	Node *card = (Node *)cookie;
+	size_t length = count * kSectorSize;
+	if (card->ReadAt(NULL, (off_t)sector * kSectorSize, buffer, length)
+			!= (ssize_t)length)
+		return B_IO_ERROR;
+
+	return B_OK;
+}
+
+
+//	#pragma mark -
+
+
 status_t
 platform_add_boot_device(struct stage2_args *args, NodeList *devicesList)
 {
@@ -528,6 +616,31 @@ platform_add_boot_device(struct stage2_args *args, NodeList *devicesList)
 	// The kernel matches its own SD capacity against this, so log what we saw.
 	printf("platform_add_boot_device: SD card is %llu bytes\n",
 		(unsigned long long)device->Size());
+
+	// A card that still carries the system as a raw partition boots as before.
+	static wii_sd_image sImage;
+	status_t status = wii_sd_image_find(read_card_sectors, device, &sImage);
+	if (status == B_OK) {
+		WiiSDImageDevice* image = new(std::nothrow) WiiSDImageDevice(device,
+			sImage);
+		if (image == NULL)
+			return B_NO_MEMORY;
+
+		printf("platform_add_boot_device: booting " WII_SD_IMAGE_PATH
+			", %llu bytes in %lu piece%s\n", (unsigned long long)image->Size(),
+			(unsigned long)sImage.run_count, sImage.run_count == 1 ? "" : "s");
+		devicesList->Add(image);
+		return B_OK;
+	}
+
+	if (status == B_BUFFER_OVERFLOW) {
+		printf("platform_add_boot_device: " WII_SD_IMAGE_PATH " is split into "
+			"more than %d pieces; copy it to a freshly formatted card\n",
+			WII_SD_IMAGE_MAX_RUNS);
+	} else if (status != B_ENTRY_NOT_FOUND) {
+		printf("platform_add_boot_device: cannot read " WII_SD_IMAGE_PATH
+			" (%" B_PRId32 ")\n", status);
+	}
 
 	devicesList->Add(device);
 	return B_OK;

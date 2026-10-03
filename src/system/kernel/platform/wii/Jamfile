@@ -10,4 +10,5 @@ KernelMergeObject kernel_platform_wii.o :
 	wii_pic.cpp
 	wii_exi.cpp
 	wii_ipc.cpp
+	wii_sd_image.cpp
 ;
