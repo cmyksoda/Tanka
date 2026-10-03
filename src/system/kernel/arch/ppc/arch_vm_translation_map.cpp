@@ -285,8 +285,12 @@ status_t
 arch_vm_translation_map_early_map(kernel_args *args, addr_t va, phys_addr_t pa,
 	uint8 attributes)
 {
-	TRACE("early_tmap: entry pa %#" B_PRIxPHYSADDR " va %#" B_PRIxADDR "\n", pa,
-		va);
+	// One line a page was 96% of the early boot log; one per 512 shows progress.
+	static uint32 sEarlyMapCount = 0;
+	if ((sEarlyMapCount++ % 512) == 0) {
+		TRACE("early_map: %" B_PRIu32 " pages mapped (va %#" B_PRIxADDR ")\n",
+			sEarlyMapCount, va);
+	}
 
 	return gPPCPagingMethod->MapEarly(args, va, pa, attributes);
 }
