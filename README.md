@@ -7,14 +7,12 @@ This is an (unfinished) attempt at creating a distribution of the Haiku® operat
 
 While this project is based on Haiku, it is **not** an official distribution from the Haiku Project. For information about the official Haiku project, please view the notice at the bottom of this page.
 
-Much work has been done by Action Retro, whose fork of upstream Haiku is what *this project* forks, to make Haiku more compatible with PowerPC systems. This endeavor wouldn't exist without his repo, you should check it out.
+Much work has been done by Action Retro, on his [Tabby operating system](https://github.com/ActionRetro/Tabby-PPC), to make Haiku more compatible with PowerPC systems. This endeavor wouldn't exist without his repo, you should check it out.
 
 This project is in the very early stages of development. Expect bugs and instability.
 
 ---
 
 *Haiku® and the HAIKU logo® are registered trademarks of [Haiku, Inc.](http://www.haiku-inc.org) and are developed by the [Haiku Project](http://www.haiku-os.org).*
-
----
 
 *This project was made with AI assistance. For more information, see [my AI usage statement](https://github.com/cmyksoda/cmyksoda/blob/main/AI_USAGE.md).*
