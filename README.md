@@ -9,7 +9,7 @@ While this project is based on Haiku, it is **not** an official distribution fro
 
 Much work has been done by Action Retro, whose fork of upstream Haiku is what *this project* forks, to make Haiku more compatible with PowerPC systems. This endeavor wouldn't exist without his repo, you should check it out.
 
-This project is heavily AI-assisted and in the very early stages of development. Expect bugs and instability.
+This project is in the very early stages of development. Expect bugs and instability.
 
 ---
 
