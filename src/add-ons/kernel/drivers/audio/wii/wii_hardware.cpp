@@ -39,8 +39,9 @@ wii_hw_create_virtual_buffers(device_stream_t* stream, const char* name)
 }
 
 
-// AI register offsets (base 0xCD006C00, 32-bit access, big-endian)
-#define WII_AI_BASE      0xCD006C00
+// AI register offsets (base 0x0D006C00, 32-bit access, big-endian); this is
+// the physical address, libogc's 0xCD006C00 is its uncached virtual alias.
+#define WII_AI_BASE      0x0D006C00
 #define WII_AI_SIZE      0x20
 
 // AI_CONTROL bits
@@ -54,10 +55,10 @@ wii_hw_create_virtual_buffers(device_stream_t* stream, const char* name)
 #define AI_RATE_32KHZ    (1 << 6)   // bit 6 = 1: 32kHz
 
 // AI register indices (32-bit word offsets)
-#define AI_CONTROL_REG   0   // 0xCD006C00
-#define AI_VOLUME_REG    1   // 0xCD006C04
-#define AI_AISCNT_REG    2   // 0xCD006C08
-#define AI_AIIT_REG      3   // 0xCD006C0C
+#define AI_CONTROL_REG   0   // 0x0D006C00
+#define AI_VOLUME_REG    1   // 0x0D006C04
+#define AI_AISCNT_REG    2   // 0x0D006C08
+#define AI_AIIT_REG      3   // 0x0D006C0C
 
 
 static int32

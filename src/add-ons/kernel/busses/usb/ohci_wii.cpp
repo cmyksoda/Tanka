@@ -20,8 +20,8 @@
 extern device_manager_info* gDeviceManager;
 extern usb_for_controller_interface* gUSB;
 
-#define HOLLYWOOD_OHCI_0_BASE 0xCD050000
-#define HOLLYWOOD_OHCI_1_BASE 0xCD060000
+#define HOLLYWOOD_OHCI_0_BASE 0x0D050000
+#define HOLLYWOOD_OHCI_1_BASE 0x0D060000
 #define HOLLYWOOD_OHCI_SIZE   0x1000
 
 // In Haiku PowerPC, we usually just pass IRQ vectors straight through.

@@ -18,7 +18,7 @@
 
 #define SDHCI_WII_MMC_BUS_MODULE_NAME "busses/mmc/sdhci/wii/device/v1"
 
-#define HOLLYWOOD_SDHC_BASE 0xCD070000
+#define HOLLYWOOD_SDHC_BASE 0x0D070000
 #define HOLLYWOOD_SDHC_SIZE 0x200
 #define HOLLYWOOD_SDHC_IRQ  7
 
