@@ -607,27 +607,45 @@ PPCVMTranslationMapClassic::MaxPagesNeededToMap(addr_t start, addr_t end) const
 }
 
 
-// PPC keeps the instruction and data caches incoherent, and the classic page
-// table has no per-page execute bit, so a page that is demand-paged in as data
-// and then executed (all user code: runtime_loader and everything it loads)
-// would run whatever stale bytes happen to be in the I-cache -- the executable
-// loads fine on the cache-coherent emulator but crashes on real PPC hardware.
-// Sync the page's caches when we insert an executable mapping. icbi/dcbst take
-// effective addresses, so this is only valid while the freshly inserted
-// translation is reachable in the active MMU context -- i.e. this map is active
-// on the current CPU, which is exactly the case for a user demand-paging fault
-// (the faulting thread runs in this very address space). Mappings made into a
-// non-current address space are skipped; those pages are synced when they first
-// fault in the context that actually runs them.
+// PPC's instruction cache doesn't snoop the data cache, and file pages are
+// filled by CPU copies, so an executable mapping has to push its page out
+// first. Going by physical address with data translation off (as Linux does
+// on ppc32) works for any address space and ignores the page's protection.
 static void
-ppc_sync_executable_mapping(PPCVMTranslationMapClassic* map,
-	addr_t virtualAddress, uint32 attributes)
+ppc_sync_executable_mapping(phys_addr_t physicalAddress, uint32 attributes)
 {
 	if ((attributes & B_EXECUTE_AREA) == 0)
 		return;
-	if (!map->PagingStructures()->active_on_cpus.GetBit(smp_get_current_cpu()))
-		return;
-	arch_cpu_sync_icache((void*)virtualAddress, B_PAGE_SIZE);
+
+	addr_t line = physicalAddress & ~(addr_t)(B_PAGE_SIZE - 1);
+	addr_t end = line + B_PAGE_SIZE;
+	uint32 msr;
+	addr_t cursor;
+
+	cpu_status state = disable_interrupts();
+	asm volatile(
+		"mfmsr	%[msr]\n\t"
+		"rlwinm	%[cursor], %[msr], 0, 28, 26\n\t"	// clear MSR[DR]
+		"mtmsr	%[cursor]\n\t"
+		"isync\n\t"
+		"mr	%[cursor], %[line]\n"
+		"1:	dcbst	0, %[cursor]\n\t"
+		"addi	%[cursor], %[cursor], 32\n\t"
+		"cmplw	%[cursor], %[end]\n\t"
+		"blt	1b\n\t"
+		"sync\n\t"
+		"mr	%[cursor], %[line]\n"
+		"2:	icbi	0, %[cursor]\n\t"
+		"addi	%[cursor], %[cursor], 32\n\t"
+		"cmplw	%[cursor], %[end]\n\t"
+		"blt	2b\n\t"
+		"sync\n\t"
+		"mtmsr	%[msr]\n\t"
+		"isync"
+		: [msr] "=&r" (msr), [cursor] "=&b" (cursor)
+		: [line] "r" (line), [end] "r" (end)
+		: "cr0", "memory");
+	restore_interrupts(state);
 }
 
 
@@ -678,7 +696,7 @@ PPCVMTranslationMapClassic::Map(addr_t virtualAddress,
 		m->FillPageTableEntry(entry, virtualSegmentID, virtualAddress,
 			physicalAddress, protection, memoryType, false);
 		fMapCount++;
-		ppc_sync_executable_mapping(this, virtualAddress, attributes);
+		ppc_sync_executable_mapping(physicalAddress, attributes);
 		return B_OK;
 	}
 
@@ -705,7 +723,7 @@ PPCVMTranslationMapClassic::Map(addr_t virtualAddress,
 		m->FillPageTableEntry(entry, virtualSegmentID, virtualAddress,
 			physicalAddress, protection, memoryType, true);
 		fMapCount++;
-		ppc_sync_executable_mapping(this, virtualAddress, attributes);
+		ppc_sync_executable_mapping(physicalAddress, attributes);
 		return B_OK;
 	}
 
@@ -828,7 +846,7 @@ PPCVMTranslationMapClassic::Map(addr_t virtualAddress,
 	m->FillPageTableEntry(&victimGroups[victimGroup]->entry[victim],
 		virtualSegmentID, virtualAddress, physicalAddress, protection,
 		memoryType, victimGroup == 1);
-	ppc_sync_executable_mapping(this, virtualAddress, attributes);
+	ppc_sync_executable_mapping(physicalAddress, attributes);
 	return B_OK;
 
 #if 0//X86
