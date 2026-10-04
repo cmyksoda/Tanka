@@ -32,6 +32,7 @@ extern "C" int main(stage2_args *args);
 extern "C" status_t arch_start_kernel(struct kernel_args *kernelArgs,
 		addr_t kernelEntry, addr_t kernelStackTop, uint32 sdr1);
 extern "C" status_t boot_arch_mmu_init(void);
+extern void wii_sd_boot_device_close(void);
 
 extern void (*__ctor_list)(void);
 extern void (*__ctor_end)(void);
@@ -69,6 +70,12 @@ platform_start_kernel(void)
 {
 	// only now are the boot volume's driver settings loaded
 	video_apply_settings();
+
+	// Leave IOS as libogc leaves it for the next program: our fds closed, and
+	// the STM event hook released while its reply can still be taken.
+	wii_sd_boot_device_close();
+	dprintf("IOS subsystems shut down: %" B_PRId32 "\n",
+		(int32)__IOS_ShutdownSubsystems());
 
 	addr_t kernelEntry = get_kernel_entry();
 	addr_t stackTop = gKernelArgs.cpu_kstack[0].start

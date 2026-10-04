@@ -519,6 +519,14 @@ WiiSDBootDevice::Size() const
 }
 
 
+//! The kernel opens the card again itself, and IOS may refuse a second open.
+void
+wii_sd_boot_device_close(void)
+{
+	sdio_uninit();
+}
+
+
 //	#pragma mark -
 
 
