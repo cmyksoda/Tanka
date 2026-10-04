@@ -467,6 +467,15 @@ SEARCH on <user-first-login>first_login
 	= [ FDirName $(HAIKU_TOP) data settings ] ;
 AddFilesToHaikuImage home config settings : <user-first-login>first_login ;
 
+# A Wii has no input yet to answer the first-boot language prompt with, and
+# launch_daemon only shows it while "Locale settings" is missing.
+if $(HAIKU_KERNEL_PLATFORM) = wii {
+	SEARCH on "<wii-settings>Locale settings"
+		= [ FDirName $(HAIKU_TOP) data settings ] ;
+	AddFilesToHaikuImage home config settings
+		: "<wii-settings>Locale settings" ;
+}
+
 local etcDir = [ FDirName $(HAIKU_TOP) data etc ] ;
 local etcFiles = inputrc profile ;
 etcFiles = $(etcFiles:G=etc) ;
