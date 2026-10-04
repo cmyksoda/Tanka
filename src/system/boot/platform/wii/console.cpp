@@ -117,7 +117,13 @@ video_init(void)
 	VIDEO_Init();
 
 	sVideoMode = VIDEO_GetPreferredMode(NULL);
-	sFrameBuffer = MEM_K0_TO_K1(SYS_AllocateFramebuffer(sVideoMode));
+
+	// Every libogc program scans out of MEM1; nothing shows the VI reaching MEM2,
+	// where memalign() would put it. Below the MEM1 pool it stays reserved.
+	addr_t frameBuffer = ((addr_t)SYS_GetArena1Lo() + 31) & ~(addr_t)31;
+	SYS_SetArena1Lo((void *)(frameBuffer
+		+ ((VIDEO_GetFrameBufferSize(sVideoMode) + 31) & ~31)));
+	sFrameBuffer = MEM_K0_TO_K1((void *)frameBuffer);
 
 	VIDEO_ClearFrameBuffer(sVideoMode, sFrameBuffer, COLOR_BLACK);
 	CON_Init(sFrameBuffer, 20, 20, sVideoMode->fbWidth, sVideoMode->xfbHeight,
