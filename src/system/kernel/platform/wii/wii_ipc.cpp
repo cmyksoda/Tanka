@@ -426,6 +426,13 @@ wii_ios_ioctlv(int32 fd, uint32 op, uint32 countIn, uint32 countIO,
 		if (vectors[i].buffer == NULL || vectors[i].size == 0)
 			continue;
 
+		if (vectors[i].physical != 0) {
+			ipc_flush(vectors[i].buffer, vectors[i].size);
+			table[i].address = vectors[i].physical;
+			table[i].size = (uint32)vectors[i].size;
+			continue;
+		}
+
 		buffers[i] = ipc_bounce(vectors[i].size);
 		if (buffers[i] == NULL)
 			return B_NO_MEMORY;
@@ -458,6 +465,13 @@ wii_ios_ioctlv(int32 fd, uint32 op, uint32 countIn, uint32 countIO,
 	for (uint32 i = countIn; i < count; i++) {
 		if (buffers[i] != NULL)
 			memcpy(vectors[i].buffer, buffers[i], vectors[i].size);
+	}
+
+	// IOS may write an input vector too (an SD read lands in one), as libogc
+	// assumes when it invalidates every vector after the reply.
+	for (uint32 i = 0; i < count; i++) {
+		if (vectors[i].physical != 0 && vectors[i].buffer != NULL)
+			ipc_invalidate(vectors[i].buffer, vectors[i].size);
 	}
 
 	return result;

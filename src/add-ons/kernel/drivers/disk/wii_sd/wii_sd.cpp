@@ -63,7 +63,8 @@ sdio_send_command(uint32 command, uint32 type, uint32 responseType,
 	sRequest.arg = argument;
 	sRequest.blk_cnt = blockCount;
 	sRequest.blk_size = blockSize;
-	// The data lands wherever this points, so it has to be a real address.
+	// Dolphin moves the data here and real IOS through the data vector, so
+	// both name the same physical buffer.
 	sRequest.dma_addr = dma ? sDMAPhysical : 0;
 	sRequest.isdma = dma ? 1 : 0;
 	sRequest.pad0 = 0;
@@ -72,11 +73,12 @@ sdio_send_command(uint32 command, uint32 type, uint32 responseType,
 
 	int32 result;
 	if (dma || sSDHC) {
-		wii_ios_vector vectors[3];
+		wii_ios_vector vectors[3] = {};
 		vectors[0].buffer = &sRequest;
 		vectors[0].size = sizeof(sRequest);
 		vectors[1].buffer = dma ? sDMABuffer : NULL;
 		vectors[1].size = dma ? blockSize * blockCount : 0;
+		vectors[1].physical = dma ? sDMAPhysical : 0;
 		vectors[2].buffer = &sResponse;
 		vectors[2].size = sizeof(sResponse);
 		result = wii_ios_ioctlv(sFD, WII_SDIO_IOCTL_SENDCMD, 2, 1, vectors);

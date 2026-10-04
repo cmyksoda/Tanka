@@ -93,6 +93,8 @@ bool wii_gecko_input_poll(struct wii_gecko_input_packet *packet);
 struct wii_ios_vector {
 	void	*buffer;
 	size_t	size;
+	uint32	physical;
+		// nonzero: a cache-line aligned buffer IOS uses in place, unbounced
 };
 
 status_t wii_ipc_init(void);
