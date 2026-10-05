@@ -308,7 +308,11 @@ PPCWii::InitPostThread(struct kernel_args *kernelArgs)
 	if (thread < 0)
 		return thread;
 
-	return resume_thread(thread);
+	status_t error = resume_thread(thread);
+	if (error != B_OK)
+		return error;
+
+	return wii_gecko_init_post_thread();
 }
 
 

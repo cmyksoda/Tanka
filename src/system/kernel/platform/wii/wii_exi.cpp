@@ -55,6 +55,9 @@
 // debugger ever reads them, so a short ring is plenty.
 #define GECKO_CONSOLE_RING_SIZE	64
 
+// The input driver polls every few milliseconds while input_server runs.
+#define GECKO_INPUT_DRIVER_QUIET	2000000
+
 
 static addr_t sEXIBase;
 static uint32 sCounterBias;
@@ -71,6 +74,7 @@ static uint32 sConsoleTail;
 static uint8 sFrame[WII_GECKO_FRAME_SIZE - 2];
 static uint32 sFrameLength;
 static uint32 sFrameState;
+static bigtime_t sLastInputPoll;
 
 
 static inline volatile uint32 *
@@ -327,15 +331,12 @@ gecko_demux(char c, wii_gecko_input_packet* _packet)
 }
 
 
-/*!	Non-blocking drain for the input driver. The debug console shares this EXI
-	channel, hence the lock around each single byte transaction.
+/*!	Non-blocking drain. The debug console shares this EXI channel, hence the
+	lock around each single byte transaction.
 */
-bool
-wii_gecko_input_poll(wii_gecko_input_packet* packet)
+static bool
+gecko_poll(wii_gecko_input_packet* packet)
 {
-	if (!sGeckoPresent)
-		return false;
-
 	for (int i = 0; i < GECKO_CONSOLE_RING_SIZE; i++) {
 		char c;
 		cpu_status state = disable_interrupts();
@@ -349,11 +350,49 @@ wii_gecko_input_poll(wii_gecko_input_packet* packet)
 
 		if (!received)
 			return false;
-		if (complete)
-			return true;
+		if (complete) {
+			if (packet->type != WII_GECKO_INPUT_DEBUGGER)
+				return true;
+			kernel_debugger("USB Gecko break");
+		}
 	}
 
 	return false;
+}
+
+
+bool
+wii_gecko_input_poll(wii_gecko_input_packet* packet)
+{
+	if (!sGeckoPresent)
+		return false;
+
+	sLastInputPoll = system_time();
+	return gecko_poll(packet);
+}
+
+
+// A hung userland has no input driver left to read a break frame, so the
+// kernel listens itself whenever that driver has gone quiet.
+static void
+gecko_break_daemon(void* /*arg*/, int /*iteration*/)
+{
+	if (system_time() - sLastInputPoll < GECKO_INPUT_DRIVER_QUIET)
+		return;
+
+	wii_gecko_input_packet packet;
+	while (gecko_poll(&packet))
+		;
+}
+
+
+status_t
+wii_gecko_init_post_thread(void)
+{
+	if (!sGeckoPresent)
+		return B_OK;
+
+	return register_kernel_daemon(&gecko_break_daemon, NULL, 10);
 }
 
 

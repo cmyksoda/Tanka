@@ -88,6 +88,7 @@ char wii_serial_debug_get_char(void);
 // Host input frames multiplexed onto the debug console; see wii_gecko_input.h.
 struct wii_gecko_input_packet;
 bool wii_gecko_input_poll(struct wii_gecko_input_packet *packet);
+status_t wii_gecko_init_post_thread(void);
 
 // Synchronous IOS RPC; every call initializes the transport on demand.
 struct wii_ios_vector {

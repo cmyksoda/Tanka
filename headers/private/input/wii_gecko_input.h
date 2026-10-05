@@ -22,6 +22,7 @@
 #define WII_GECKO_INPUT_NOP			0	// resynchronizes a confused decoder
 #define WII_GECKO_INPUT_POINTER		1
 #define WII_GECKO_INPUT_KEY			2
+#define WII_GECKO_INPUT_DEBUGGER	3	// enters KDL, even with userland hung
 
 // Pointer buttons, matching B_PRIMARY_MOUSE_BUTTON and friends.
 #define WII_GECKO_BUTTON_PRIMARY	0x01
