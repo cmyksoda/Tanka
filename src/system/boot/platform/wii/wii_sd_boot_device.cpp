@@ -12,6 +12,7 @@
 
 #include <gccore.h>
 #include <ogc/ipc.h>
+#include <ogc/lwp_watchdog.h>
 
 #include <platform/wii/wii_sd_image.h>
 #include <platform/wii/wii_sdio.h>
@@ -21,9 +22,6 @@
 
 static const size_t kSectorSize = WII_SDIO_SECTOR_SIZE;
 static const uint32 kBounceSectors = 8;
-
-// not declared by any libogc header, but exported by the library
-extern "C" void udelay(int microSeconds);
 
 
 class WiiSDBootDevice : public Node {

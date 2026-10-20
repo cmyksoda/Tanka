@@ -21,10 +21,7 @@
 #include "mmu.h"
 
 
-// libogc's crt0 sequence, none of it declared in a public header
-extern "C" void PPCExcptInit(void);
-extern "C" void KThreadInit(void);
-extern "C" void KIrqInit(void);
+// libogc's crt0 calls this after SYS_Init; no public header declares it
 extern "C" void SYS_PreMain(void);
 
 extern "C" void wii_start(void);
@@ -146,9 +143,7 @@ wii_start(void)
 {
 	ctype_init();
 
-	PPCExcptInit();
-	KThreadInit();
-	KIrqInit();
+	// since libogc 3.2, SYS_Init also brings up exceptions, threads and IRQs
 	SYS_Init();
 	SYS_PreMain();
 

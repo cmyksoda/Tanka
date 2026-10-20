@@ -12,6 +12,7 @@
 #include <boot/stdio.h>
 
 #include <gccore.h>
+#include <ogc/lwp_watchdog.h>
 
 #include "debug.h"
 
@@ -41,6 +42,11 @@ void
 debug_init(void)
 {
 	sConsoleReady = true;
+
+	// libogc 3.2 reports a device only 300 ms after first seeing it; an empty
+	// slot answers -1 at once, so a Wii without a USB Gecko never waits here.
+	for (int32 tries = 0; tries < 40 && EXI_ProbeEx(CARD_SLOTB) == 0; tries++)
+		udelay(10000);
 
 	// Harmless if no USB Gecko is plugged in - libogc only sends to it when
 	// the channel answers.

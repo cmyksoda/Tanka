@@ -12,6 +12,7 @@
 #include <string.h>
 
 #include <gccore.h>
+#include <ogc/lwp_watchdog.h>
 #include <wiiuse/wpad.h>
 #include <wiikeyboard/keyboard.h>
 
@@ -19,7 +20,6 @@
 #include "debug.h"
 
 // not declared by any libogc header, but exported by the library
-extern "C" void udelay(int microSeconds);
 extern "C" void* SYS_AllocArena2MemLo(u32 size, u32 align);
 
 FILE *stdin, *stdout, *stderr;
