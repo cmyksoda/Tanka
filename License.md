@@ -1,6 +1,6 @@
 The vast majority of code in this repository was written by the Haiku Project,
 and is licensed under the MIT license, which appears below. There are some
-notable exceptions to this, such as the GNU C library (which is under the GPL)
+notable exceptions to this, such as the GNU C library (which is under the LGPL)
 as well as many other files in this repository which are under other licenses.
 Every piece of source code should have its license specified at the top, but
 there is also a (probably) comprehensive set of known licenses in the
