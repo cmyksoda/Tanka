@@ -11,6 +11,16 @@ Much work has been done by Action Retro, on his [Tabby operating system](https:/
 
 This project is in the very early stages of development. Expect bugs and instability.
 
+## Credits
+
+- **Haiku** by the Haiku Project and its contributors, the operating system Tanka is based on
+- **Tabby** by Action Retro ([Tabby-PPC](https://github.com/ActionRetro/Tabby-PPC)), a PowerPC distribution of Haiku; his work to make Haiku more compatible with PowerPC systems is what Tanka builds on
+- **libogc**, **libfat**, and **devkitPPC** by devkitPro, which the Wii boot loader is built with
+
+## License
+
+Tanka is based on Haiku, and [License.md](License.md) describes how it is licensed. It says that the vast majority of the code in this repository was written by the Haiku Project and is licensed under the MIT license, whose text appears in that file. It also says that there are some notable exceptions, such as the GNU C library (which is under the GPL), and that many other files in this repository are under other licenses. Every piece of source code should have its license specified at the top, and a (probably) comprehensive set of known licenses is in [`data/system/data/licenses`](data/system/data/licenses/).
+
 ---
 
 *Haiku® and the HAIKU logo® are registered trademarks of [Haiku, Inc.](http://www.haiku-inc.org) and are developed by the [Haiku Project](http://www.haiku-os.org).*
